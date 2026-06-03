@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Earth → Orbit</title>
+<style>
+  :root { --fg:#e9f1fb; --muted:#9fb3cc; --accent:#4ea3ff; --amber:#f2b65a; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:#05070d; overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; color:var(--fg); }
+  #scene { position:fixed; inset:0; display:block; }
+
+  .panel { position:fixed; background:rgba(10,16,28,0.55); backdrop-filter:blur(10px);
+    -webkit-backdrop-filter:blur(10px); border:1px solid rgba(120,160,210,0.18);
+    border-radius:14px; padding:14px 16px; }
+
+  #title { top:16px; left:16px; max-width:300px; }
+  #title h1 { margin:0 0 4px; font-size:17px; font-weight:600; letter-spacing:0.3px; }
+  #title p { margin:0; font-size:12px; color:var(--muted); line-height:1.5; }
+
+  #hud { bottom:16px; left:16px; min-width:210px; }
+  #hud .row { display:flex; justify-content:space-between; gap:18px; font-size:12px; margin:3px 0; }
+  #hud .row span:first-child { color:var(--muted); }
+  #hud .alt { font-size:22px; font-weight:600; margin:2px 0 8px; letter-spacing:0.4px; }
+  #hud .region { color:var(--accent); font-weight:500; }
+
+  #nav { top:16px; right:16px; display:flex; flex-direction:column; gap:7px; }
+  #nav button { background:rgba(20,30,48,0.6); color:var(--fg); border:1px solid rgba(120,160,210,0.22);
+    border-radius:10px; padding:8px 14px; font-size:13px; cursor:pointer; text-align:left;
+    transition:background .15s, border-color .15s; min-width:128px; }
+  #nav button:hover { background:rgba(40,70,120,0.7); border-color:var(--accent); }
+  #nav button small { color:var(--muted); float:right; margin-left:10px; }
+
+  #info { bottom:16px; right:16px; max-width:260px; opacity:0; transform:translateY(6px);
+    transition:opacity .2s, transform .2s; pointer-events:none; }
+  #info.show { opacity:1; transform:none; }
+  #info h3 { margin:0 0 4px; font-size:14px; }
+  #info p { margin:0; font-size:12px; color:var(--muted); line-height:1.5; }
+  #info .tag { display:inline-block; font-size:11px; color:var(--amber); margin-bottom:6px; }
+
+  #loader { position:fixed; inset:0; background:#05070d; display:flex; align-items:center;
+    justify-content:center; flex-direction:column; gap:14px; z-index:50; transition:opacity .6s; }
+  #loader.hide { opacity:0; pointer-events:none; }
+  .spin { width:34px; height:34px; border:3px solid rgba(120,160,210,0.25);
+    border-top-color:var(--accent); border-radius:50%; animation:spin 0.9s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  #loader p { font-size:13px; color:var(--muted); }
+
+  @media (max-width:640px){
+    #title { max-width:200px; padding:10px 12px; }
+    #title h1 { font-size:15px; }
+    #nav button { min-width:104px; padding:7px 10px; font-size:12px; }
+    #hud { min-width:170px; }
+  }
+</style>
+</head>
+<body>
+  <div id="loader"><div class="spin"></div><p>Loading planetary textures…</p></div>
+  <canvas id="scene"></canvas>
+
+  <div id="title" class="panel">
+    <h1>Earth → Orbit</h1>
+    <p>Drag to rotate · scroll / pinch to zoom · tap a satellite for detail. Positions are at true relative altitude; the gaps are real.</p>
+  </div>
+
+  <div id="nav" class="panel" style="background:none;border:none;backdrop-filter:none;padding:0;">
+    <button data-dist="1.28">Surface <small>0 mi</small></button>
+    <button data-dist="1.55">ISS <small>250 mi</small></button>
+    <button data-dist="1.85">Starlink <small>340 mi</small></button>
+    <button data-dist="9">GPS <small>12,550 mi</small></button>
+    <button data-dist="14">GEO <small>22,236 mi</small></button>
+    <button data-dist="95">Moon <small>238,900 mi</small></button>
+  </div>
+
+  <div id="hud" class="panel">
+    <div class="alt" id="altVal">0 mi</div>
+    <div class="row"><span>Region</span><span class="region" id="regionVal">Surface</span></div>
+    <div class="row"><span>Camera altitude</span><span id="kmVal">0 km</span></div>
+  </div>
+
+  <div id="info" class="panel">
+    <span class="tag" id="infoTag"></span>
+    <h3 id="infoName"></h3>
+    <p id="infoText"></p>
+  </div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const EARTH_MI = 3959;                 // Earth radius, miles
+const alt = mi => 1 + mi / EARTH_MI;   // scene radius for a given altitude (Earth = 1 unit)
+const TEX = 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r160/examples/textures/planets/';
+
+const canvas = document.getElementById('scene');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.002, 4000);
+camera.position.set(0, 0.5, 2.6);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.rotateSpeed = 0.5;
+controls.minDistance = 1.04;
+controls.maxDistance = 150;
+controls.enablePan = false;
+
+// ---- Lighting (sun) ----
+const sunDir = new THREE.Vector3(5, 1.6, 3).normalize();
+const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+sun.position.copy(sunDir);
+scene.add(sun);
+scene.add(new THREE.AmbientLight(0x223044, 0.5));
+
+// ---- Loading ----
+const manager = new THREE.LoadingManager();
+manager.onLoad = () => document.getElementById('loader').classList.add('hide');
+const loader = new THREE.TextureLoader(manager);
+const load = (f) => { const t = loader.load(TEX + f); t.colorSpace = THREE.SRGBColorSpace; return t; };
+
+const dayTex   = load('earth_atmos_2048.jpg');
+const nightTex = load('earth_lights_2048.png');
+const specTex  = load('earth_specular_2048.jpg');
+const normTex  = loader.load(TEX + 'earth_normal_2048.jpg');
+const cloudTex = load('earth_clouds_1024.png');
+const moonTex  = load('moon_1024.jpg');
+
+// ---- Earth ----
+const earthGroup = new THREE.Group();
+scene.add(earthGroup);
+
+const earthMat = new THREE.MeshPhongMaterial({
+  map: dayTex, specularMap: specTex, normalMap: normTex,
+  normalScale: new THREE.Vector2(0.7, 0.7),
+  specular: new THREE.Color(0x2a3a55), shininess: 14
+});
+// Blend city lights onto the night side via shader injection.
+const uSun = { value: sunDir.clone() };
+earthMat.onBeforeCompile = (shader) => {
+  shader.uniforms.uNightMap = { value: nightTex };
+  shader.uniforms.uSunDir = uSun;
+  shader.vertexShader = 'varying vec3 vWN;\n' + shader.vertexShader.replace(
+    '#include <begin_vertex>',
+    '#include <begin_vertex>\n  vWN = mat3(modelMatrix) * normal;'
+  );
+  shader.fragmentShader =
+    'uniform sampler2D uNightMap;\nuniform vec3 uSunDir;\nvarying vec3 vWN;\n' +
+    shader.fragmentShader.replace(
+      '#include <emissivemap_fragment>',
+      `#include <emissivemap_fragment>
+       float dsun = dot(normalize(vWN), normalize(uSunDir));
+       float night = smoothstep(0.10, -0.18, dsun);
+       vec3 city = texture2D(uNightMap, vMapUv).rgb;
+       totalEmissiveRadiance += city * night * 1.7;`
+    );
+};
+const earth = new THREE.Mesh(new THREE.SphereGeometry(1, 96, 96), earthMat);
+earthGroup.add(earth);
+
+// Clouds
+const clouds = new THREE.Mesh(
+  new THREE.SphereGeometry(1.004, 64, 64),
+  new THREE.MeshPhongMaterial({ map: cloudTex, transparent:true, opacity:0.75, depthWrite:false })
+);
+earthGroup.add(clouds);
+
+// Atmosphere glow (fresnel, backside)
+const atmosphere = new THREE.Mesh(
+  new THREE.SphereGeometry(1.025, 64, 64),
+  new THREE.ShaderMaterial({
+    uniforms: { uColor: { value: new THREE.Color(0x4ea3ff) } },
+    vertexShader: `varying vec3 vN; varying vec3 vP;
+      void main(){ vN = normalize(normalMatrix * normal);
+        vec4 mv = modelViewMatrix * vec4(position,1.0); vP = mv.xyz;
+        gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `varying vec3 vN; varying vec3 vP; uniform vec3 uColor;
+      void main(){ vec3 vd = normalize(-vP);
+        float f = pow(1.0 - abs(dot(vN, vd)), 3.0);
+        gl_FragColor = vec4(uColor * f, f); }`,
+    blending: THREE.AdditiveBlending, side: THREE.BackSide, transparent:true, depthWrite:false
+  })
+);
+scene.add(atmosphere);
+
+// ---- Stars ----
+function starTexture(){
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(32,32,0,32,32,32);
+  grd.addColorStop(0,'rgba(255,255,255,1)');
+  grd.addColorStop(0.3,'rgba(255,255,255,0.8)');
+  grd.addColorStop(1,'rgba(255,255,255,0)');
+  g.fillStyle = grd; g.fillRect(0,0,64,64);
+  const t = new THREE.CanvasTexture(c); return t;
+}
+function buildStars(){
+  const N = 7000, R = 900;
+  const pos = new Float32Array(N*3), col = new Float32Array(N*3), siz = new Float32Array(N);
+  const tint = [ [1,1,1], [0.75,0.83,1], [1,0.95,0.85], [1,0.82,0.7] ];
+  for (let i=0;i<N;i++){
+    // ~22% of stars cluster near a tilted plane to suggest the Milky Way band
+    let u = Math.random()*2-1, theta = Math.random()*Math.PI*2;
+    if (Math.random() < 0.22) u *= 0.16;
+    const s = Math.sqrt(1-u*u);
+    let x = s*Math.cos(theta), y = u, z = s*Math.sin(theta);
+    // tilt the band
+    const ty = y*0.92 - z*0.39, tz = y*0.39 + z*0.92;
+    pos[i*3]=x*R; pos[i*3+1]=ty*R; pos[i*3+2]=tz*R;
+    const c = tint[(Math.random()*tint.length)|0];
+    const b = 0.55 + Math.random()*0.45;
+    col[i*3]=c[0]*b; col[i*3+1]=c[1]*b; col[i*3+2]=c[2]*b;
+    siz[i] = 1.2 + Math.random()*Math.random()*5;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  geo.setAttribute('color', new THREE.BufferAttribute(col,3));
+  geo.setAttribute('size', new THREE.BufferAttribute(siz,1));
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uTex:{ value: starTexture() } },
+    vertexShader: `attribute float size; varying vec3 vC;
+      void main(){ vC = color;
+        vec4 mv = modelViewMatrix * vec4(position,1.0);
+        gl_PointSize = size * (300.0 / -mv.z);
+        gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `uniform sampler2D uTex; varying vec3 vC;
+      void main(){ vec4 t = texture2D(uTex, gl_PointCoord);
+        gl_FragColor = vec4(vC, 1.0) * t; }`,
+    transparent:true, vertexColors:true, depthWrite:false, blending:THREE.AdditiveBlending
+  });
+  return new THREE.Points(geo, mat);
+}
+scene.add(buildStars());
+
+// ---- Orbit rings + satellite beacons ----
+const pickables = [];
+function ring(radius, inclDeg, color, op){
+  const seg = 256, pts = [];
+  for (let i=0;i<=seg;i++){ const a = i/seg*Math.PI*2; pts.push(new THREE.Vector3(Math.cos(a)*radius,0,Math.sin(a)*radius)); }
+  const g = new THREE.BufferGeometry().setFromPoints(pts);
+  const l = new THREE.LineLoop(g, new THREE.LineBasicMaterial({ color, transparent:true, opacity:op }));
+  l.rotation.x = THREE.MathUtils.degToRad(inclDeg);
+  scene.add(l); return l;
+}
+function shell(radius, count, bandDeg, color, size){
+  const pos = new Float32Array(count*3), band = THREE.MathUtils.degToRad(bandDeg);
+  for (let i=0;i<count;i++){
+    const lon = Math.random()*Math.PI*2, lat = (Math.random()*2-1)*band;
+    pos[i*3]=radius*Math.cos(lat)*Math.cos(lon);
+    pos[i*3+1]=radius*Math.sin(lat);
+    pos[i*3+2]=radius*Math.cos(lat)*Math.sin(lon);
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  const p = new THREE.Points(g, new THREE.PointsMaterial({ color, size, sizeAttenuation:true, transparent:true, opacity:0.9, depthWrite:false }));
+  scene.add(p); return p;
+}
+function beacon(radius, inclDeg, phaseDeg, color, data){
+  const m = new THREE.Mesh(new THREE.SphereGeometry(0.012, 16, 16),
+    new THREE.MeshBasicMaterial({ color }));
+  const a = THREE.MathUtils.degToRad(phaseDeg), inc = THREE.MathUtils.degToRad(inclDeg);
+  const base = new THREE.Vector3(Math.cos(a)*radius, 0, Math.sin(a)*radius);
+  base.applyAxisAngle(new THREE.Vector3(1,0,0), inc);
+  m.position.copy(base);
+  m.userData = data;
+  scene.add(m); pickables.push(m); return m;
+}
+
+// Kármán line (faint)
+ring(alt(62), 0, 0xf2b65a, 0.25);
+ring(alt(62), 60, 0xf2b65a, 0.12);
+
+// ISS
+ring(alt(250), 51.6, 0x66e0ff, 0.5);
+beacon(alt(250), 51.6, 40, 0x9bf0ff, { tag:'Low Earth Orbit', name:'ISS — 250 mi',
+  text:'The International Space Station orbits ~250 mi up at 17,500 mph, circling Earth every ~92 min. Atmospheric drag is still significant here, so it needs periodic reboosts.' });
+
+// Starlink shell (~53° band)
+shell(alt(340), 900, 53, 0xbfe3ff, 0.018);
+beacon(alt(340), 53, 200, 0xffffff, { tag:'Low Earth Orbit', name:'Starlink — 340 mi',
+  text:'Thousands of Starlink satellites fill a 53° inclined shell at ~340 mi. Being low means low latency (~25 ms) but each sat covers a small area — hence the huge constellation.' });
+
+// GPS — 6 planes, 55°
+for (let p=0;p<6;p++) ring(alt(12550), 55, 0x8fd17a, 0.22);
+for (let p=0;p<6;p++) for (let s=0;s<4;s++) {
+  // spread beacons across planes for visual variety; one carries the label
+  if (p===0 && s===0)
+    beacon(alt(12550), 55, 0, 0xc6f0a8, { tag:'Medium Earth Orbit', name:'GPS — 12,550 mi',
+      text:'GPS satellites sit ~12,550 mi up in MEO, each orbiting twice a day. At this distance the signal delay (~0.07 s) and relativistic time dilation must be corrected — your fix depends on it.' });
+  else beacon(alt(12550), 55, p*60 + s*90, 0x8fd17a, { tag:'Medium Earth Orbit', name:'GPS satellite — 12,550 mi',
+      text:'One of ~31 GPS satellites across 6 orbital planes providing global coverage.' });
+}
+
+// GEO ring
+ring(alt(22236), 0, 0xf2b65a, 0.4);
+beacon(alt(22236), 0, 90, 0xffd27a, { tag:'Geostationary', name:'GEO — 22,236 mi',
+  text:'At 22,236 mi the orbital period equals one day, so the satellite appears to hover over a fixed point. Used for TV, weather, and broadcast comms.' });
+
+// ---- Moon ----
+const moon = new THREE.Mesh(new THREE.SphereGeometry(0.273, 48, 48),
+  new THREE.MeshPhongMaterial({ map: moonTex }));
+const moonR = alt(238900);
+moon.position.set(moonR*0.82, moonR*0.18, -moonR*0.54);
+scene.add(moon);
+pickables.push(moon);
+moon.userData = { tag:'Cislunar space', name:'The Moon — 238,900 mi',
+  text:'Earth\u2019s natural satellite, ~60 Earth-radii away. About 960× farther than the ISS — at true scale, nearly the entire journey out here is empty black.' };
+
+// ---- Picking ----
+const ray = new THREE.Raycaster(); ray.params.Points.threshold = 0.03;
+const ndc = new THREE.Vector2();
+const infoEl = document.getElementById('info');
+function pick(cx, cy){
+  ndc.x = (cx/innerWidth)*2 - 1; ndc.y = -(cy/innerHeight)*2 + 1;
+  ray.setFromCamera(ndc, camera);
+  const hit = ray.intersectObjects(pickables, false)[0];
+  if (hit && hit.object.userData.name){
+    const d = hit.object.userData;
+    document.getElementById('infoTag').textContent = d.tag;
+    document.getElementById('infoName').textContent = d.name;
+    document.getElementById('infoText').textContent = d.text;
+    infoEl.classList.add('show');
+  } else { infoEl.classList.remove('show'); }
+}
+canvas.addEventListener('click', e => pick(e.clientX, e.clientY));
+
+// ---- Fly-to presets ----
+let fly = null;
+document.querySelectorAll('#nav button').forEach(b => {
+  b.addEventListener('click', () => {
+    const target = parseFloat(b.dataset.dist);
+    const from = camera.position.length();
+    fly = { from, to: target, t: 0 };
+  });
+});
+function applyFly(dt){
+  if (!fly) return;
+  fly.t = Math.min(1, fly.t + dt/1.1);
+  const e = fly.t<0.5 ? 2*fly.t*fly.t : 1-Math.pow(-2*fly.t+2,2)/2; // easeInOut
+  const d = fly.from + (fly.to - fly.from)*e;
+  camera.position.setLength(d);
+  if (fly.t >= 1) fly = null;
+}
+
+// ---- HUD ----
+const altVal = document.getElementById('altVal');
+const regionVal = document.getElementById('regionVal');
+const kmVal = document.getElementById('kmVal');
+function region(mi){
+  if (mi < 7.5) return 'Troposphere';
+  if (mi < 31) return 'Stratosphere';
+  if (mi < 53) return 'Mesosphere';
+  if (mi < 62) return 'Mesosphere · Kármán line';
+  if (mi < 375) return 'Thermosphere · LEO';
+  if (mi < 6200) return 'Exosphere · LEO';
+  if (mi < 22236) return 'Space · MEO';
+  if (mi < 60000) return 'Space · GEO';
+  return 'Cislunar space';
+}
+function fmt(n){ return Math.round(n).toLocaleString(); }
+function updateHUD(){
+  const mi = (camera.position.length() - 1) * EARTH_MI;
+  altVal.textContent = fmt(Math.max(0,mi)) + ' mi';
+  kmVal.textContent = fmt(Math.max(0,mi)*1.609) + ' km';
+  regionVal.textContent = region(Math.max(0,mi));
+}
+
+// ---- Loop ----
+let last = performance.now();
+function tick(now){
+  const dt = Math.min(0.05,(now-last)/1000); last = now;
+  earth.rotation.y += dt*0.02;
+  clouds.rotation.y += dt*0.026;
+  applyFly(dt);
+  controls.update();
+  updateHUD();
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
