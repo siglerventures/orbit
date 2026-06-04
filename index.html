@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="1.0">
+<meta name="app-rev" content="1.1">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -70,6 +70,10 @@ document.addEventListener('DOMContentLoaded', function(){
   #speed button { flex:1; background:rgba(20,30,48,0.6); color:var(--muted); border:1px solid rgba(120,160,210,0.22);
     border-radius:8px; padding:5px 0; font-size:11px; cursor:pointer; }
   #speed button.active { color:var(--fg); border-color:var(--accent); background:rgba(40,70,120,0.6); }
+  #scaleBtn { width:100%; margin-top:8px; background:rgba(20,30,48,0.6); color:var(--muted);
+    border:1px solid rgba(120,160,210,0.22); border-radius:8px; padding:7px 0; font-size:11px; cursor:pointer;
+    transition:background .15s, color .15s, border-color .15s; }
+  #scaleBtn.active { color:var(--fg); border-color:var(--amber); background:rgba(120,90,40,0.5); }
 
   #nav { top:16px; right:16px; display:flex; flex-direction:column; gap:7px; }
   #nav button { background:rgba(20,30,48,0.6); color:var(--fg); border:1px solid rgba(120,160,210,0.22);
@@ -178,12 +182,12 @@ document.addEventListener('DOMContentLoaded', function(){
   </div>
 
   <div id="nav" class="panel" style="background:none;border:none;backdrop-filter:none;padding:0;">
-    <button data-dist="1.28">Surface <small>0 mi</small></button>
-    <button data-dist="1.55">ISS <small>250 mi</small></button>
-    <button data-dist="1.85">Starlink <small>340 mi</small></button>
-    <button data-dist="9">GPS <small>12,550 mi</small></button>
-    <button data-dist="14">GEO <small>22,236 mi</small></button>
-    <button data-dist="95">Moon <small>238,900 mi</small></button>
+    <button data-shellmi="0" data-standoff="0">Surface <small>0 mi</small></button>
+    <button data-shellmi="250" data-standoff="1.46">ISS <small>250 mi</small></button>
+    <button data-shellmi="340" data-standoff="1.70">Starlink <small>340 mi</small></button>
+    <button data-shellmi="12550" data-standoff="2.16">GPS <small>12,550 mi</small></button>
+    <button data-shellmi="22236" data-standoff="2.12">GEO <small>22,236 mi</small></button>
+    <button data-shellmi="238900" data-standoff="1.55">Moon <small>238,900 mi</small></button>
   </div>
 
   <div id="hud" class="panel">
@@ -196,6 +200,7 @@ document.addEventListener('DOMContentLoaded', function(){
       <button data-mult="60">60×</button>
       <button data-mult="600">600×</button>
     </div>
+    <button id="scaleBtn" title="Spread the orbital shells apart so LEO, MEO and GEO are individually navigable. The altitude readout always stays true.">Scale · True</button>
   </div>
 
   <div id="info" class="panel">
@@ -225,6 +230,28 @@ const API = 'https://tle.ivanstanojevic.me/api/tle';
 
 // ECI (km) -> scene vector, with Earth's spin axis mapped to +Y
 const eciToScene = (p, v) => { v.set(p.x / EARTH_KM, p.z / EARTH_KM, -p.y / EARTH_KM); return v; };
+
+// ---------- P1 · Exaggerated / logarithmic altitude mode ----------
+// A radial remap that lifts the orbital shells apart so LEO, MEO and GEO are
+// individually navigable, while the HUD keeps reporting *true* altitude.
+//   displayR(true) = 1 + K·log10(1 + altKm/C)   (altKm derived from the true radius)
+// Tuned so LEO→~1.75-1.97, GPS→~7.8, GEO→~9.0, Moon→~14.2. We morph a 0→1
+// factor so the transition between true and exaggerated scale is a smooth glide.
+const EX_C = 1000, EX_K = 5.1;
+let morph = 0, morphTarget = 0;            // 0 = true scale, 1 = exaggerated
+let morphActive = false;                   // true while easing (drives per-frame re-scale)
+const exaggR = trueR => { const km = (trueR - 1) * EARTH_KM; return 1 + EX_K * Math.log10(1 + Math.max(0, km) / EX_C); };
+const displayRadiusAt = (trueR, m) => (m <= 1e-4 ? trueR : trueR + (exaggR(trueR) - trueR) * m);
+const displayRadius = trueR => displayRadiusAt(trueR, morph);
+// Invert the (monotonic) remap so the camera's display radius -> true radius,
+// keeping the altitude HUD honest in exaggerated mode.
+function trueFromDisplay(R){
+  if(morph <= 1e-4) return R;
+  let lo = 1, hi = 2000;
+  for(let i=0;i<48;i++){ const mid=(lo+hi)*0.5; if(displayRadius(mid) < R) lo=mid; else hi=mid; }
+  return (lo+hi)*0.5;
+}
+const ringScalables = [];   // {obj, trueR} — circles/loops uniformly scaled by the remap
 
 const canvas = document.getElementById('scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
@@ -327,7 +354,9 @@ const pickables = [];
 
 // ---------- Moon (representative position) ----------
 const moon = new THREE.Mesh(new THREE.SphereGeometry(0.273,48,48), new THREE.MeshPhongMaterial({ map:moonTex }));
-const moonR = alt(238900); moon.position.set(moonR*0.82, moonR*0.18, -moonR*0.54);
+const moonTrueR = alt(238900);
+const moonDir = new THREE.Vector3(0.82, 0.18, -0.54).normalize();
+moon.position.copy(moonDir).multiplyScalar(moonTrueR);
 scene.add(moon); pickables.push(moon);
 moon.userData={ tag:'Cislunar space', name:'The Moon — 238,900 mi',
   text:'Earth\u2019s natural satellite, ~60 Earth-radii away — about 960× farther than the ISS.' };
@@ -338,12 +367,15 @@ function ring(radius, inclDeg, color, op){
   for(let i=0;i<=seg;i++){ const a=i/seg*Math.PI*2; pts.push(new THREE.Vector3(Math.cos(a)*radius,0,Math.sin(a)*radius)); }
   const l=new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts),
     new THREE.LineBasicMaterial({ color, transparent:true, opacity:op }));
-  l.rotation.x=THREE.MathUtils.degToRad(inclDeg); scene.add(l); return l;
+  l.rotation.x=THREE.MathUtils.degToRad(inclDeg); scene.add(l);
+  ringScalables.push({ obj:l, trueR:radius });   // tracked for the altitude remap
+  return l;
 }
 ring(alt(62),0,0xf2b65a,0.22);
 ring(alt(22236),0,0xf2b65a,0.4);
 const geoBeacon=new THREE.Mesh(new THREE.SphereGeometry(0.05,16,16), new THREE.MeshBasicMaterial({color:0xffd27a}));
-geoBeacon.position.set(alt(22236),0,0); scene.add(geoBeacon); pickables.push(geoBeacon);
+const geoBeaconTrueR = alt(22236);
+geoBeacon.position.set(geoBeaconTrueR,0,0); scene.add(geoBeacon); pickables.push(geoBeacon);
 geoBeacon.userData={ tag:'Geostationary', name:'GEO — 22,236 mi',
   text:'At 22,236 mi the orbital period equals one day, so the satellite hovers over a fixed point. Used for TV, weather and broadcast comms.' };
 
@@ -386,6 +418,8 @@ function issTrail(satrec){
   const l=new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts),
     new THREE.LineBasicMaterial({ color:0x66e0ff, transparent:true, opacity:0.45 }));
   scene.add(l);
+  let mean=0; for(const p of pts) mean+=p.length(); mean/=(pts.length||1);
+  ringScalables.push({ obj:l, trueR:mean });   // nearly-constant LEO radius — uniform scale is exact enough
 }
 
 let liveReady=false;
@@ -421,12 +455,32 @@ async function loadSatellites(){
     fallbackShells();
   }
 }
+let fallbackCloud=null, fallbackBase=null;
 function fallbackShells(){
   ring(alt(250),51.6,0x66e0ff,0.5);
   const sl=makeCloud(900,0xbfe3ff,0.018), pos=sl.geometry.attributes.position.array;
   for(let i=0;i<900;i++){ const lon=Math.random()*Math.PI*2,lat=(Math.random()*2-1)*0.92,r=alt(340);
     pos[i*3]=r*Math.cos(lat)*Math.cos(lon); pos[i*3+1]=r*Math.sin(lat); pos[i*3+2]=r*Math.cos(lat)*Math.sin(lon); }
   sl.geometry.attributes.position.needsUpdate=true;
+  fallbackCloud=sl; fallbackBase=Float32Array.from(pos);   // remapped under the altitude morph
+}
+
+// Re-scale every static / loop object to the current morph. Cheap (a handful of
+// objects) and only invoked while the morph is animating; live point clouds are
+// remapped inline in updateGroup since their positions are recomputed each frame.
+function applyMorph(){
+  for(const r of ringScalables) r.obj.scale.setScalar(displayRadius(r.trueR)/r.trueR);
+  geoBeacon.position.set(displayRadius(geoBeaconTrueR),0,0);
+  moon.position.copy(moonDir).multiplyScalar(displayRadius(moonTrueR));
+  if(fallbackCloud){
+    const pos=fallbackCloud.geometry.attributes.position.array;
+    for(let i=0;i<fallbackBase.length;i+=3){
+      const x=fallbackBase[i],y=fallbackBase[i+1],z=fallbackBase[i+2];
+      const r=Math.hypot(x,y,z); if(!r){ pos[i]=pos[i+1]=pos[i+2]=0; continue; }
+      const s=displayRadius(r)/r; pos[i]=x*s; pos[i+1]=y*s; pos[i+2]=z*s;
+    }
+    fallbackCloud.geometry.attributes.position.needsUpdate=true;
+  }
 }
 
 // ---------- Picking ----------
@@ -450,8 +504,27 @@ const MIND=1.06, MAXD=150;
 let targetDist = THREE.MathUtils.clamp(camera.position.length(), MIND, MAXD);
 const setTarget = d => { targetDist = THREE.MathUtils.clamp(d, MIND, MAXD); };
 
+// Fly-to presets frame each shell in whichever scale mode is active: convert the
+// shell's true altitude through the (target-state) remap, then stand off by a factor.
 document.querySelectorAll('#nav button').forEach(b=>
-  b.addEventListener('click', ()=> setTarget(parseFloat(b.dataset.dist))));
+  b.addEventListener('click', ()=>{
+    const shellMi=parseFloat(b.dataset.shellmi);
+    if(!shellMi){ setTarget(1.28); return; }      // Surface
+    const standoff=parseFloat(b.dataset.standoff)||1.5;
+    setTarget(displayRadiusAt(alt(shellMi), morphTarget) * standoff);
+  }));
+
+// Scale toggle — morph between true and exaggerated, riding the camera out with
+// the shells so it keeps framing the same true altitude.
+const scaleBtn=document.getElementById('scaleBtn');
+scaleBtn.addEventListener('click', ()=>{
+  const camTrue=trueFromDisplay(targetDist);     // physical radius the camera is framing now
+  morphTarget = morphTarget ? 0 : 1;
+  morphActive = true;
+  scaleBtn.textContent = morphTarget ? 'Scale · Exaggerated' : 'Scale · True';
+  scaleBtn.classList.toggle('active', !!morphTarget);
+  setTarget(displayRadiusAt(camTrue, morphTarget));
+});
 
 // Mouse / trackpad wheel — multiplicative so it feels even at every scale
 canvas.addEventListener('wheel', e=>{
@@ -496,6 +569,7 @@ function updateGroup(g, date){
     const pv=satellite.propagate(g.satrecs[i], date);
     if(!pv || !pv.position){ if(arr){arr[i*3]=arr[i*3+1]=arr[i*3+2]=0;} continue; }
     eciToScene(pv.position,_p);
+    if(morph>1e-4) _p.setLength(displayRadius(_p.length()));   // lift to exaggerated shell
     if(arr){ arr[i*3]=_p.x; arr[i*3+1]=_p.y; arr[i*3+2]=_p.z; }
     if(i===0 && g.beacon) g.beacon.position.copy(_p);
   }
@@ -520,9 +594,15 @@ function tick(now){
   const date=new Date(simNow());
   const gmst=satellite.gstime(date);
   earthGroup.rotation.y=gmst; clouds.rotation.y=now*0.000004;
+  // Ease the altitude morph and re-scale the static shells while it moves.
+  if(morphActive){
+    morph += (morphTarget-morph)*(1-Math.exp(-dt*3.5));
+    if(Math.abs(morphTarget-morph)<1e-4){ morph=morphTarget; morphActive=false; }
+    applyMorph();
+  }
   if(liveReady){ updateGroup(groups.iss,date); updateGroup(groups.gps,date); updateGroup(groups.starlink,date); }
   applyZoom(dt); controls.update();
-  const mi=(camera.position.length()-1)*EARTH_MI;
+  const mi=(trueFromDisplay(camera.position.length())-1)*EARTH_MI;   // HUD always reports true altitude
   altVal.textContent=fmt(Math.max(0,mi))+' mi'; regionVal.textContent=region(Math.max(0,mi));
   timeVal.textContent=date.toISOString().substr(11,8);
   renderer.render(scene,camera);
