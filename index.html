@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="2.2">
+<meta name="app-rev" content="2.3">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -81,6 +81,10 @@ document.addEventListener('DOMContentLoaded', function(){
     transition:background .15s, border-color .15s; min-width:128px; }
   #nav button:hover { background:rgba(40,70,120,0.7); border-color:var(--accent); }
   #nav button small { color:var(--muted); float:right; margin-left:10px; }
+  #nav .navsep { font-size:10px; letter-spacing:1.5px; text-transform:uppercase; color:var(--muted);
+    text-align:right; padding:4px 4px 0; opacity:0.7; }
+  #nav button.planet { padding:6px 14px; font-size:12px; background:rgba(24,22,40,0.6); border-color:rgba(150,140,210,0.22); }
+  #nav button.planet:hover { background:rgba(60,50,110,0.65); border-color:#9b8cf0; }
 
   #search { top:16px; left:50%; transform:translateX(-50%); padding:8px 10px; display:flex; align-items:center; gap:8px; }
   #search input { width:230px; max-width:46vw; background:rgba(20,30,48,0.7); border:1px solid rgba(120,160,210,0.25);
@@ -104,6 +108,28 @@ document.addEventListener('DOMContentLoaded', function(){
     border:1px dashed transparent; transition:border-color .3s; }
   #homeBtn:hover::after { border-color:rgba(78,163,255,0.45); animation:homeOrbit 6s linear infinite; }
   @keyframes homeOrbit { to { transform:rotate(360deg); } }
+
+  /* Explore — sparkle button (right of search) + live-highlights popover. */
+  #exploreBtn { position:fixed; z-index:60; top:16px; left:calc(50% + 150px);
+    width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    font-size:18px; cursor:pointer; -webkit-tap-highlight-color:transparent;
+    background:radial-gradient(circle at 32% 28%, rgba(242,182,90,0.30), rgba(20,30,48,0.72));
+    border:1px solid rgba(242,182,90,0.45); backdrop-filter:blur(6px); box-shadow:0 4px 14px rgba(0,0,0,0.4);
+    transition:transform .15s, box-shadow .25s, border-color .25s, background .25s; }
+  #exploreBtn:hover { transform:translateY(-1px);
+    background:radial-gradient(circle at 32% 28%, rgba(242,182,90,0.5), rgba(30,45,72,0.82));
+    box-shadow:0 0 18px rgba(242,182,90,0.5), 0 4px 14px rgba(0,0,0,0.4); }
+  #exploreBtn:active { transform:scale(0.9); }
+  #explore { position:fixed; z-index:60; top:64px; left:50%; transform:translateX(-50%);
+    width:252px; display:none; flex-direction:column; gap:5px; padding:10px; }
+  #explore.show { display:flex; }
+  #explore .exhead { font-size:10px; text-transform:uppercase; letter-spacing:1.3px; color:var(--muted); margin-bottom:3px; }
+  #explore .exrow { display:flex; justify-content:space-between; align-items:center; gap:10px; text-align:left;
+    background:rgba(20,30,48,0.6); border:1px solid rgba(120,160,210,0.22); border-radius:9px;
+    padding:8px 11px; color:var(--fg); font-size:12px; cursor:pointer; transition:background .15s, border-color .15s; }
+  #explore .exrow:hover { background:rgba(40,70,120,0.7); border-color:var(--accent); }
+  #explore .exk { color:var(--muted); white-space:nowrap; }
+  #explore .exv { color:var(--fg); font-weight:600; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .sat-label { font-size:11px; color:#ffe7b0; background:rgba(10,16,28,0.66); border:1px solid rgba(242,182,90,0.45);
     padding:2px 7px; border-radius:7px; white-space:nowrap; pointer-events:none; text-shadow:0 1px 2px #000; margin-top:-14px; }
   .body-label { font-size:11px; color:var(--muted); background:rgba(10,16,28,0.55); border:1px solid rgba(120,160,210,0.25);
@@ -142,6 +168,8 @@ document.addEventListener('DOMContentLoaded', function(){
     #nav button { min-width:104px; padding:7px 10px; font-size:12px; }
     #hud { min-width:180px; }
     #homeBtn { top:auto; bottom:14px; left:14px; }   /* clear of the search bar on small screens */
+    #exploreBtn { top:auto; bottom:14px; left:62px; }
+    #explore { top:auto; bottom:62px; }
   }
 
   /* ===== Access shell (login gate · footer · modals) ===== */
@@ -232,13 +260,30 @@ document.addEventListener('DOMContentLoaded', function(){
     <span id="searchMsg"></span>
   </div>
 
+  <button id="exploreBtn" title="Explore live highlights" aria-label="Explore live highlights">✨</button>
+  <div id="explore" class="panel">
+    <div class="exhead">Live highlights — click to fly</div>
+    <button class="exrow" data-ex="low"><span class="exk">⬇ Closest to Earth</span><span class="exv" id="ex-low">—</span></button>
+    <button class="exrow" data-ex="high"><span class="exk">⬆ Farthest out</span><span class="exv" id="ex-high">—</span></button>
+    <button class="exrow" data-ex="fast"><span class="exk">⚡ Fastest</span><span class="exv" id="ex-fast">—</span></button>
+    <button class="exrow" data-ex="rand"><span class="exk">🎲 Random satellite</span><span class="exv">surprise me</span></button>
+  </div>
+
   <div id="nav" class="panel" style="background:none;border:none;backdrop-filter:none;padding:0;">
     <button data-shellmi="0" data-standoff="0" data-track="all" data-tip="Ground level — drop the camera down to Earth's surface.">Surface <small>0 mi</small></button>
     <button data-shellmi="250" data-standoff="1.46" data-track="iss" data-tip="International Space Station — a crewed laboratory orbiting at ~250 mi, circling Earth every ~92 minutes.">ISS <small>250 mi</small></button>
     <button data-shellmi="340" data-standoff="1.70" data-track="starlink" data-tip="SpaceX's Starlink — a low-Earth-orbit internet constellation of thousands of satellites at ~340 mi.">Starlink <small>340 mi</small></button>
     <button data-shellmi="12550" data-standoff="2.16" data-track="gps" data-tip="GPS (NAVSTAR) — US navigation satellites in medium Earth orbit at ~12,550 mi.">GPS <small>12,550 mi</small></button>
     <button data-shellmi="22236" data-standoff="2.12" data-track="geo" data-tip="Geostationary belt at 22,236 mi — satellites here hover over a fixed point (TV, weather, comms).">GEO <small>22,236 mi</small></button>
-    <button data-shellmi="238900" data-standoff="1.55" data-track="all" data-tip="The Moon — Earth's natural satellite, ~238,900 mi away (about 960× farther than the ISS).">Moon <small>238,900 mi</small></button>
+    <button data-shellmi="238900" data-standoff="1.55" data-track="all" data-orient="moon" data-tip="The Moon — Earth's natural satellite, ~238,900 mi away (about 960× farther than the ISS).">Moon <small>238,900 mi</small></button>
+    <div class="navsep">Planets</div>
+    <button class="planet" data-planet="Mercury" data-tip="Mercury — the smallest planet and closest to the Sun.">Mercury <small>— AU</small></button>
+    <button class="planet" data-planet="Venus" data-tip="Venus — the hottest planet, wrapped in a thick CO₂ atmosphere.">Venus <small>— AU</small></button>
+    <button class="planet" data-planet="Mars" data-tip="Mars — the Red Planet, home to the tallest volcano in the solar system.">Mars <small>— AU</small></button>
+    <button class="planet" data-planet="Jupiter" data-tip="Jupiter — the largest planet; the Great Red Spot is a centuries-old storm.">Jupiter <small>— AU</small></button>
+    <button class="planet" data-planet="Saturn" data-tip="Saturn — the ringed gas giant, famous for its spectacular ring system.">Saturn <small>— AU</small></button>
+    <button class="planet" data-planet="Uranus" data-tip="Uranus — an ice giant that rotates on its side.">Uranus <small>— AU</small></button>
+    <button class="planet" data-planet="Neptune" data-tip="Neptune — the windiest planet and the farthest from the Sun.">Neptune <small>— AU</small></button>
   </div>
 
   <div id="hud" class="panel">
@@ -385,6 +430,10 @@ const _selPos=new THREE.Vector3(), _tmpA=new THREE.Vector3(), _tmpB=new THREE.Ve
 // Current scene position (post-morph) of whatever is selected.
 function selectionScenePos(out){
   if(!selection) return false;
+  if(selection.kind==='obj'){                 // planet (fixed scene position, no morph)
+    if(!selection.obj) return false;
+    out.copy(selection.obj.position); return true;
+  }
   if(selection.kind==='cloud'){
     if(!cloudCur) return false;
     const i=selection.idx, x=cloudCur[i*3], y=cloudCur[i*3+1], z=cloudCur[i*3+2];
@@ -443,6 +492,16 @@ function flyToISS(){
   selection={ kind:'rec', satrec:groups.iss.satrecs[0], name:'ISS', id:25544 };
   selEl.textContent='ISS';
   showInfo(describeRec(selection)); flyToSelection(); return true;
+}
+// Fly to a planet (fixed scene position in its real geocentric direction).
+function flyToPlanet(name){
+  const p=planetByName(name); if(!p) return false;
+  selection={ kind:'obj', obj:p.mesh, name:p.def.name };
+  selEl.textContent=p.def.name;
+  showInfo(p.mesh.userData);
+  flyDir=p.mesh.position.clone().normalize();
+  setTarget(Math.min(MAXD-3, p.sceneR*1.32));   // stand off just beyond the planet
+  return true;
 }
 function selectCloud(idx, fly){
   selection={ kind:'cloud', idx };
@@ -660,6 +719,89 @@ const geoBeaconTrueR = alt(22236);
 geoBeacon.position.set(geoBeaconTrueR,0,0); scene.add(geoBeacon); pickables.push(geoBeacon);
 geoBeacon.userData={ tag:'Geostationary', name:'GEO — 22,236 mi',
   text:'At 22,236 mi the orbital period equals one day, so the satellite hovers over a fixed point. Used for TV, weather and broadcast comms.' };
+
+// ---------- Planets (just for fun) ----------
+// Real geocentric *directions* from JPL approximate Keplerian elements (Standish);
+// distances are log-compressed into navigable scene radii beyond the Moon, but the
+// planets are ordered by their true current distance from Earth.
+const PL_RAD=Math.PI/180, PL_EPS=23.43928*PL_RAD;
+// [a, e, I°, L°, peri°, node°] at J2000 and per-century rates.
+const PL_ELEM={
+  Mercury:[[0.38709927,0.20563593,7.00497902,252.25032350,77.45779628,48.33076593],[0.00000037,0.00001906,-0.00594749,149472.67411175,0.16047689,-0.12534081]],
+  Venus:  [[0.72333566,0.00677672,3.39467605,181.97909950,131.60246718,76.67984255],[0.00000390,-0.00004107,-0.00078890,58517.81538729,0.00268329,-0.27769418]],
+  Earth:  [[1.00000261,0.01671123,-0.00001531,100.46457166,102.93768193,0.0],[0.00000562,-0.00004392,-0.01294668,35999.37244981,0.32327364,0.0]],
+  Mars:   [[1.52371034,0.09339410,1.84969142,-4.55343205,-23.94362959,49.55953891],[0.00001847,0.00007882,-0.00813131,19140.30268499,0.44441088,-0.29257343]],
+  Jupiter:[[5.20288700,0.04838624,1.30439695,34.39644051,14.72847983,100.47390909],[-0.00011607,-0.00013253,-0.00183714,3034.74612775,0.21252668,0.20469106]],
+  Saturn: [[9.53667594,0.05386179,2.48599187,49.95424423,92.59887831,113.66242448],[-0.00125060,-0.00050991,0.00193609,1222.49362201,-0.41897216,-0.28867794]],
+  Uranus: [[19.18916464,0.04725744,0.77263783,313.23810451,170.95427630,74.01692503],[-0.00196176,-0.00004397,-0.00242939,428.48202785,0.40805281,0.04240589]],
+  Neptune:[[30.06992276,0.00859048,1.77004347,-55.12002969,44.96476227,131.78422574],[0.00026291,0.00005105,0.00035372,218.45945325,-0.32241464,-0.00508664]],
+};
+function plHelio(name, T){   // heliocentric ecliptic position (AU)
+  const [E0,R]=PL_ELEM[name];
+  const a=E0[0]+R[0]*T, e=E0[1]+R[1]*T, I=(E0[2]+R[2]*T)*PL_RAD;
+  const L=E0[3]+R[3]*T, w=E0[4]+R[4]*T, node=E0[5]+R[5]*T;
+  let M=(L-w)*PL_RAD; M=Math.atan2(Math.sin(M),Math.cos(M));
+  let Ea=M; for(let i=0;i<8;i++) Ea=Ea-(Ea-e*Math.sin(Ea)-M)/(1-e*Math.cos(Ea));
+  const xp=a*(Math.cos(Ea)-e), yp=a*Math.sqrt(1-e*e)*Math.sin(Ea);
+  const wp=(w-node)*PL_RAD, om=node*PL_RAD;
+  const cw=Math.cos(wp),sw=Math.sin(wp),co=Math.cos(om),so=Math.sin(om),ci=Math.cos(I),si=Math.sin(I);
+  return [ (cw*co-sw*so*ci)*xp+(-sw*co-cw*so*ci)*yp,
+           (cw*so+sw*co*ci)*xp+(-sw*so+cw*co*ci)*yp,
+           (sw*si)*xp+(cw*si)*yp ];
+}
+// Geocentric unit direction in SCENE axes + true distance (AU) for a planet.
+const _plDir=new THREE.Vector3();
+function planetGeo(name, date){
+  const T=(date.getTime()/86400000 + 2440587.5 - 2451545.0)/36525;
+  const e=plHelio('Earth',T), p=plHelio(name,T);
+  const gx=p[0]-e[0], gy=p[1]-e[1], gz=p[2]-e[2];           // geocentric ecliptic
+  const distAU=Math.hypot(gx,gy,gz);
+  const xq=gx, yq=gy*Math.cos(PL_EPS)-gz*Math.sin(PL_EPS),  // ecliptic -> equatorial
+        zq=gy*Math.sin(PL_EPS)+gz*Math.cos(PL_EPS);
+  _plDir.set(xq, zq, -yq).normalize();                      // equatorial -> scene axes
+  return { dir:_plDir, distAU };
+}
+const PLANET_DEFS=[
+  { name:'Mercury', color:0xb9a89a, r:0.9, fact:'The smallest planet and the closest to the Sun.' },
+  { name:'Venus',   color:0xe6cd8a, r:1.5, fact:'The hottest planet, wrapped in a thick CO₂ atmosphere.' },
+  { name:'Mars',    color:0xe2683b, r:1.1, fact:'The Red Planet — home to Olympus Mons, the tallest volcano known.' },
+  { name:'Jupiter', color:0xd9a066, r:3.0, fact:'The largest planet; the Great Red Spot is a storm wider than Earth.' },
+  { name:'Saturn',  color:0xe7d4a0, r:2.6, fact:'The ringed gas giant, famous for its spectacular ring system.' },
+  { name:'Uranus',  color:0x9fe6ea, r:2.0, fact:'An ice giant that rotates almost on its side.' },
+  { name:'Neptune', color:0x5a7cf0, r:2.0, fact:'The windiest planet and the farthest from the Sun.' },
+];
+const planets=[];
+const PLANET_BASE=70, PLANET_STEP=5.6;   // compressed scene radii, ordered by true distance
+for(const def of PLANET_DEFS){
+  const m=new THREE.Mesh(new THREE.SphereGeometry(def.r,24,24), new THREE.MeshBasicMaterial({color:def.color}));
+  m.userData={ tag:'Planet', name:def.name, text:def.fact };
+  scene.add(m);
+  // Generous invisible pick sphere so the distant planet is easy to click.
+  const hit=new THREE.Mesh(new THREE.SphereGeometry(def.r*2.2,12,12),
+    new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false}));
+  hit.userData=m.userData; m.add(hit); pickables.push(hit);
+  const el=document.createElement('div'); el.className='body-label'; el.textContent=def.name;
+  const lbl=new CSS2DObject(el); lbl.position.set(0,def.r+0.6,0); m.add(lbl);
+  const btn=document.querySelector('#nav button[data-planet="'+def.name+'"]');
+  planets.push({ def, mesh:m, label:lbl, btn, sceneR:PLANET_BASE });
+}
+// Recompute planet directions/order/distances (called at load + periodically).
+function updatePlanets(date){
+  for(const p of planets){
+    const g=planetGeo(p.def.name, date);
+    p.dir=g.dir.clone(); p.distAU=g.distAU;
+  }
+  const order=[...planets].sort((a,b)=>a.distAU-b.distAU);  // nearest first
+  order.forEach((p,i)=>{ p.sceneR=PLANET_BASE+i*PLANET_STEP; });
+  for(const p of planets){
+    p.mesh.position.copy(p.dir).multiplyScalar(p.sceneR);
+    const au=p.distAU.toFixed(p.distAU<10?2:1);
+    p.mesh.userData.name=p.def.name+' — '+au+' AU from Earth';
+    p.mesh.userData.text=p.def.fact+' Currently '+au+' AU away.';
+    const small=p.btn && p.btn.querySelector('small'); if(small) small.textContent=au+' AU';
+  }
+}
+function planetByName(name){ return planets.find(p=>p.def.name===name); }
 
 // ---------- Live satellites ----------
 // The ISS is tracked exactly on the main thread (single sat, with its trail).
@@ -1036,6 +1178,7 @@ const setTarget = d => { targetDist = THREE.MathUtils.clamp(d, MIND, MAXD); };
 // shell's true altitude through the (target-state) remap, then stand off by a factor.
 document.querySelectorAll('#nav button').forEach(b=>
   b.addEventListener('click', ()=>{
+    if(b.dataset.planet){ focusConstellation(null); flyToPlanet(b.dataset.planet); return; }   // planets
     const key=b.dataset.track;
     setTracking(key);                           // reflect the focused constellation's count
     const shellMi=parseFloat(b.dataset.shellmi);
@@ -1052,6 +1195,7 @@ document.querySelectorAll('#nav button').forEach(b=>
     if(key==='iss' && flyToISS()) return;       // ISS: fly to wherever it is right now
     deselect();
     if(!shellMi){ setTarget(1.28); return; }    // Surface
+    if(b.dataset.orient==='moon') flyDir=moon.position.clone().normalize();   // Moon: look toward it
     setTarget(displayRadiusAt(alt(shellMi), morphTarget) * standoff);     // Moon (or ISS fallback)
   }));
 
@@ -1125,6 +1269,50 @@ document.getElementById('homeBtn').addEventListener('click', ()=>{
   setTarget(HOME_POS.length());
 });
 
+// ---------- Explore: live highlights (closest / farthest / fastest / random) ----------
+const explorePanel=document.getElementById('explore');
+let exData={};
+function exName(i){ const m=cloudMeta[i]; return m ? (m.name||m.short||'satellite') : 'satellite'; }
+function computeHighlights(){
+  let lo=null, hi=null, fa=null;
+  if(cloudCur){
+    const simDt=(CLOUD_TICK_MS/1000)*Math.max(1e-6,speed);
+    for(let i=0;i<cloudMeta.length;i++){
+      const x=cloudCur[i*3], y=cloudCur[i*3+1], z=cloudCur[i*3+2];
+      if(x!==x) continue;
+      const altMi=(Math.hypot(x,y,z)-1)*EARTH_MI;
+      if(!lo||altMi<lo.v) lo={i,v:altMi};
+      if(!hi||altMi>hi.v) hi={i,v:altMi};
+      if(cloudPrev){
+        const dx=x-cloudPrev[i*3], dy=y-cloudPrev[i*3+1], dz=z-cloudPrev[i*3+2];
+        const mph=Math.hypot(dx,dy,dz)*EARTH_MI/simDt*3600;
+        if(!fa||mph>fa.v) fa={i,v:mph};
+      }
+    }
+  }
+  return {lo,hi,fa};
+}
+document.getElementById('exploreBtn').addEventListener('click', ()=>{
+  if(explorePanel.classList.contains('show')){ explorePanel.classList.remove('show'); return; }
+  exData=computeHighlights();
+  document.getElementById('ex-low').textContent  = exData.lo ? exName(exData.lo.i)+' · '+fmt(Math.max(0,exData.lo.v))+' mi'  : 'no data yet';
+  document.getElementById('ex-high').textContent = exData.hi ? exName(exData.hi.i)+' · '+fmt(exData.hi.v)+' mi'             : 'no data yet';
+  document.getElementById('ex-fast').textContent = exData.fa ? exName(exData.fa.i)+' · '+fmt(exData.fa.v)+' mph'            : 'no data yet';
+  explorePanel.classList.add('show');
+});
+explorePanel.querySelectorAll('.exrow').forEach(row=>row.addEventListener('click', ()=>{
+  const kind=row.dataset.ex; let idx=-1;
+  if(kind==='low'  && exData.lo) idx=exData.lo.i;
+  else if(kind==='high' && exData.hi) idx=exData.hi.i;
+  else if(kind==='fast' && exData.fa) idx=exData.fa.i;
+  else if(kind==='rand' && cloudCur){
+    const valid=[]; for(let i=0;i<cloudMeta.length;i++){ if(cloudCur[i*3]===cloudCur[i*3]) valid.push(i); }
+    if(valid.length) idx=valid[Math.floor(Math.random()*valid.length)];
+  }
+  if(idx>=0){ focusConstellation(null); selectCloud(idx,true); }
+  explorePanel.classList.remove('show');
+}));
+
 // ---------- Update satellites ----------
 const _p=new THREE.Vector3();
 function updateGroup(g, date){
@@ -1154,6 +1342,7 @@ const fmt=n=>Math.round(n).toLocaleString();
 
 // ---------- Loop ----------
 let last=performance.now();
+let lastPlanetUpd=-1e9;   // forces updatePlanets on the first frame
 function tick(now){
   const dt=Math.min(0.05,(now-last)/1000); last=now;
   const date=new Date(simNow());
@@ -1170,6 +1359,11 @@ function tick(now){
   }
   if(groups.iss) updateGroup(groups.iss,date);
   updateCloud();
+  if(now-lastPlanetUpd>2500){ updatePlanets(date); lastPlanetUpd=now; }   // planets drift slowly
+  // Show planet labels only when zoomed out toward them; hide a planet's own
+  // label while it's the selected body (the selection label already names it).
+  const plLabels = camera.position.length()>28;
+  for(const p of planets) p.label.visible = plLabels && !(selection && selection.kind==='obj' && selection.obj===p.mesh);
   updateSelection();
   applyZoom(dt); controls.update();
   const mi=(trueFromDisplay(camera.position.length())-1)*EARTH_MI;   // HUD always reports true altitude
