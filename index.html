@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="2.0">
+<meta name="app-rev" content="2.1">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -387,6 +387,39 @@ function flyToSelection(){
   const trueR = morph>1e-4 ? trueFromDisplay(_selPos.length()) : _selPos.length();
   setTarget(displayRadiusAt(trueR, morphTarget) * 1.6);
 }
+// Enlarge one constellation's dots so it's easy to spot (null clears the boost).
+function focusConstellation(short){
+  if(!cloud || !cloudBaseSize) return;
+  const arr=cloud.geometry.attributes.size.array;
+  for(let i=0;i<arr.length;i++)
+    arr[i]=cloudBaseSize[i]*((short && cloudMeta[i].short===short)?2.5:1);
+  cloud.geometry.attributes.size.needsUpdate=true;
+}
+// Fly to a real member of a constellation — the one most in front of the current
+// view, so the glide is short — and select it (ring + label + info).
+function flyToConstellation(short){
+  if(!cloud || !cloudCur) return false;
+  _camDir.copy(camera.position).normalize();
+  let best=-1, bestDot=-2;
+  for(let i=0;i<cloudMeta.length;i++){
+    if(cloudMeta[i].short!==short) continue;
+    const x=cloudCur[i*3], y=cloudCur[i*3+1], z=cloudCur[i*3+2];
+    if(x!==x) continue;                                  // NaN = no current position
+    const len=Math.hypot(x,y,z)||1;
+    const dot=(x*_camDir.x+y*_camDir.y+z*_camDir.z)/len;
+    if(dot>bestDot){ bestDot=dot; best=i; }
+  }
+  if(best<0) return false;
+  selectCloud(best, true);                               // select + ring + label + fly
+  return true;
+}
+// Fly to the ISS wherever it currently is (it's tracked separately from the cloud).
+function flyToISS(){
+  if(!groups.iss || !groups.iss.satrecs[0]) return false;
+  selection={ kind:'rec', satrec:groups.iss.satrecs[0], name:'ISS', id:25544 };
+  selEl.textContent='ISS';
+  showInfo(describeRec(selection)); flyToSelection(); return true;
+}
 function selectCloud(idx, fly){
   selection={ kind:'cloud', idx };
   const d=describeCloud(idx);
@@ -715,6 +748,7 @@ const SAT_GROUPS = [
 ];
 
 let cloud=null;                 // THREE.Points for the whole bulk constellation
+let cloudBaseSize=null;         // base per-point sizes, so a focused group can be enlarged
 const cloudMeta=[];             // per-point { name, id, tag, short } for picking
 let cloudWorker=null;
 let cloudPrev=null, cloudCur=null, cloudRecvWall=0;   // double-buffer for interpolation
@@ -764,6 +798,7 @@ function buildCloud(tles){
   geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
   geo.setAttribute('color', new THREE.BufferAttribute(col,3));
   geo.setAttribute('size', new THREE.BufferAttribute(siz,1));
+  cloudBaseSize=siz.slice();      // base sizes preserved for the focus-highlight boost
   cloudViewH={ value: innerHeight*Math.min(devicePixelRatio,2)*0.5 };
   const mat=new THREE.ShaderMaterial({
     uniforms:{ uTex:{value:dotTexture()}, uVH:cloudViewH },
@@ -977,11 +1012,23 @@ const setTarget = d => { targetDist = THREE.MathUtils.clamp(d, MIND, MAXD); };
 // shell's true altitude through the (target-state) remap, then stand off by a factor.
 document.querySelectorAll('#nav button').forEach(b=>
   b.addEventListener('click', ()=>{
-    setTracking(b.dataset.track);               // reflect the focused constellation's count
+    const key=b.dataset.track;
+    setTracking(key);                           // reflect the focused constellation's count
     const shellMi=parseFloat(b.dataset.shellmi);
-    if(!shellMi){ setTarget(1.28); return; }      // Surface
     const standoff=parseFloat(b.dataset.standoff)||1.5;
-    setTarget(displayRadiusAt(alt(shellMi), morphTarget) * standoff);
+    const shortMap={ starlink:'Starlink', gps:'GPS · NAVSTAR', geo:'GEO satellite' };
+    // Constellation presets: enlarge that group and fly to a real member of it.
+    if(shortMap[key]){
+      focusConstellation(shortMap[key]);
+      if(flyToConstellation(shortMap[key])) return;       // framed + selected a live one
+      setTarget(displayRadiusAt(alt(shellMi), morphTarget) * standoff);   // fallback: just stand off
+      return;
+    }
+    focusConstellation(null);                   // clear any size boost for non-constellation presets
+    if(key==='iss' && flyToISS()) return;       // ISS: fly to wherever it is right now
+    deselect();
+    if(!shellMi){ setTarget(1.28); return; }    // Surface
+    setTarget(displayRadiusAt(alt(shellMi), morphTarget) * standoff);     // Moon (or ISS fallback)
   }));
 
 // Scale toggle — morph between true and exaggerated, riding the camera out with
