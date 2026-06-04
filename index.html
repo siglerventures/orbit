@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="2.8">
+<meta name="app-rev" content="2.9">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -85,6 +85,17 @@ document.addEventListener('DOMContentLoaded', function(){
     text-align:right; padding:4px 4px 0; opacity:0.7; }
   #nav button.planet { padding:6px 14px; font-size:12px; background:rgba(24,22,40,0.6); border-color:rgba(150,140,210,0.22); }
   #nav button.planet:hover { background:rgba(60,50,110,0.65); border-color:#9b8cf0; }
+  #nav button.sky { padding:6px 14px; font-size:12px; background:rgba(16,32,38,0.6); border-color:rgba(110,200,205,0.22); }
+  #nav button.sky:hover { background:rgba(28,70,78,0.65); border-color:#67e0d8; }
+  #nav button.sky.active { background:rgba(34,86,92,0.85); border-color:#67e0d8; color:#d6fbf6; }
+  /* Skywatch overlay labels on the celestial sphere */
+  .const-label { font-size:10px; letter-spacing:1px; text-transform:uppercase; color:rgba(150,195,255,0.66);
+    background:none; border:none; pointer-events:none; text-shadow:0 0 4px rgba(0,0,0,0.8); }
+  .shower-label { font-size:10px; color:rgba(255,200,140,0.92); background:rgba(26,16,8,0.55);
+    border:1px solid rgba(255,180,110,0.32); border-radius:5px; padding:1px 6px; white-space:nowrap; cursor:pointer; pointer-events:auto; }
+  .shower-label.active { color:#ffdca6; border-color:#ffb060; box-shadow:0 0 9px rgba(255,160,80,0.55); }
+  .comet-label { font-size:10px; color:rgba(180,232,255,0.94); background:rgba(8,22,30,0.55);
+    border:1px solid rgba(120,210,255,0.34); border-radius:5px; padding:1px 6px; white-space:nowrap; cursor:pointer; pointer-events:auto; }
 
   #search { top:16px; left:50%; transform:translateX(-50%); padding:8px 10px; display:flex; align-items:center; gap:8px; }
   #search input { width:230px; max-width:46vw; background:rgba(20,30,48,0.7); border:1px solid rgba(120,160,210,0.25);
@@ -284,6 +295,10 @@ document.addEventListener('DOMContentLoaded', function(){
     <button class="planet" data-planet="Saturn" data-tip="Saturn — the ringed gas giant, famous for its spectacular ring system.">Saturn <small>— AU</small></button>
     <button class="planet" data-planet="Uranus" data-tip="Uranus — an ice giant that rotates on its side.">Uranus <small>— AU</small></button>
     <button class="planet" data-planet="Neptune" data-tip="Neptune — the windiest planet and the farthest from the Sun.">Neptune <small>— AU</small></button>
+    <div class="navsep">🔭 Skywatch</div>
+    <button class="sky" id="sky-const" data-tip="Toggle the major constellation star patterns on the celestial sphere.">Constellations</button>
+    <button class="sky" id="sky-showers" data-tip="Toggle annual meteor shower radiants — active showers glow; labels show the next peak date.">Meteor showers</button>
+    <button class="sky" id="sky-comets" data-tip="Toggle notable comets at their live computed sky positions.">Comets</button>
   </div>
 
   <div id="hud" class="panel">
@@ -806,6 +821,173 @@ function updatePlanets(date){
   }
 }
 function planetByName(name){ return planets.find(p=>p.def.name===name); }
+
+// ===================== 🔭 Skywatch =====================
+// Constellations, meteor-shower radiants and comets, all drawn on the inertial
+// celestial sphere using the SAME RA/Dec -> scene mapping as the star catalog
+// (see loadRealStars), so they line up with the real stars and drift correctly
+// behind the spinning Earth. Each layer is an independently toggled group.
+const SKY_R = STAR_R;
+function raDecVec(raDeg, decDeg, R){
+  const a=raDeg*PL_RAD, d=decDeg*PL_RAD, cd=Math.cos(d);
+  return new THREE.Vector3(cd*Math.cos(a)*R, Math.sin(d)*R, -cd*Math.sin(a)*R);
+}
+
+// ---- Constellations: bright stars [RA°,Dec° J2000] + index pairs to connect ----
+const CONSTELLATIONS=[
+  { name:'Orion', stars:[[88.79,7.41],[81.28,6.35],[85.19,-1.94],[84.05,-1.20],[83.00,-0.30],[86.94,-9.67],[78.63,-8.20]],
+    lines:[[0,1],[0,2],[1,4],[2,3],[3,4],[2,5],[4,6],[5,6]] },
+  { name:'Ursa Major', stars:[[165.93,61.75],[165.46,56.38],[178.46,53.69],[183.86,57.03],[193.51,55.96],[200.98,54.93],[206.89,49.31]],
+    lines:[[0,1],[1,2],[2,3],[3,0],[3,4],[4,5],[5,6]] },
+  { name:'Cassiopeia', stars:[[2.29,59.15],[10.13,56.54],[14.18,60.72],[21.45,60.24],[28.60,63.67]],
+    lines:[[0,1],[1,2],[2,3],[3,4]] },
+  { name:'Cygnus', stars:[[310.36,45.28],[305.56,40.26],[292.68,27.96],[311.55,33.97],[296.24,45.13]],
+    lines:[[0,1],[1,2],[3,1],[1,4]] },
+  { name:'Leo', stars:[[152.09,11.97],[151.83,16.76],[154.99,19.84],[168.56,20.52],[177.26,14.57],[168.50,15.43]],
+    lines:[[0,1],[1,2],[2,3],[3,4],[4,5],[5,0]] },
+  { name:'Scorpius', stars:[[240.08,-22.62],[241.36,-19.81],[239.71,-26.11],[247.35,-26.43],[248.97,-28.22],[252.97,-34.29],[253.50,-38.05],[263.40,-37.10]],
+    lines:[[1,0],[0,2],[0,3],[3,4],[4,5],[5,6],[6,7]] },
+  { name:'Crux', stars:[[186.65,-63.10],[187.79,-57.11],[191.93,-59.69],[183.79,-58.75]],
+    lines:[[0,1],[2,3]] },
+  { name:'Taurus', stars:[[68.98,16.51],[81.57,28.61],[84.41,21.14]], lines:[[0,1],[0,2]] },
+  { name:'Gemini', stars:[[113.65,31.89],[116.33,28.03],[110.03,21.98],[99.43,16.40],[100.98,25.13],[95.74,22.51]],
+    lines:[[0,1],[0,4],[4,5],[1,2],[2,3]] },
+  { name:'Canis Major', stars:[[101.29,-16.72],[95.67,-17.96],[107.10,-26.39],[104.66,-28.97],[111.02,-29.30]],
+    lines:[[1,0],[0,2],[2,3],[2,4],[0,3]] },
+  { name:'Lyra', stars:[[279.23,38.78],[282.52,33.36],[284.74,32.69],[283.63,36.90]], lines:[[0,1],[1,2],[2,3],[3,0]] },
+  { name:'Boötes', stars:[[213.92,19.18],[221.25,27.07],[225.49,40.39],[218.02,38.31]], lines:[[0,1],[1,2],[2,3],[3,0]] },
+];
+const constGroup=new THREE.Group(); constGroup.visible=false; scene.add(constGroup);
+(function buildConstellations(){
+  const verts=[];
+  for(const c of CONSTELLATIONS){
+    const vs=c.stars.map(s=>raDecVec(s[0],s[1],SKY_R*0.995));
+    for(const seg of c.lines){ const a=vs[seg[0]], b=vs[seg[1]]; verts.push(a.x,a.y,a.z, b.x,b.y,b.z); }
+    const cen=new THREE.Vector3(); vs.forEach(v=>cen.add(v)); cen.multiplyScalar(1/vs.length);
+    const el=document.createElement('div'); el.className='const-label'; el.textContent=c.name;
+    const lbl=new CSS2DObject(el); lbl.position.copy(cen.setLength(SKY_R*0.99)); constGroup.add(lbl);
+  }
+  const g=new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(verts,3));
+  constGroup.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color:0x6fb6ff, transparent:true, opacity:0.32 })));
+})();
+
+// ---- Meteor showers: annual radiants + activity windows ----
+const SHOWERS=[
+  { name:'Quadrantids',     peak:[1,3],   win:[[12,28],[1,12]], ra:230, dec:49,  zhr:120, src:'asteroid 2003 EH₁' },
+  { name:'Lyrids',          peak:[4,22],  win:[[4,16],[4,25]],  ra:271, dec:34,  zhr:18,  src:'Comet Thatcher' },
+  { name:'Eta Aquariids',   peak:[5,6],   win:[[4,19],[5,28]],  ra:338, dec:-1,  zhr:50,  src:"Comet Halley" },
+  { name:'Delta Aquariids', peak:[7,30],  win:[[7,12],[8,23]],  ra:340, dec:-16, zhr:25,  src:'Comet 96P/Machholz' },
+  { name:'Perseids',        peak:[8,12],  win:[[7,17],[8,24]],  ra:48,  dec:58,  zhr:100, src:'Comet Swift–Tuttle' },
+  { name:'Draconids',       peak:[10,8],  win:[[10,6],[10,10]], ra:262, dec:54,  zhr:10,  src:'Comet Giacobini–Zinner' },
+  { name:'Orionids',        peak:[10,21], win:[[10,2],[11,7]],  ra:95,  dec:16,  zhr:20,  src:'Comet Halley' },
+  { name:'Leonids',         peak:[11,17], win:[[11,6],[11,30]], ra:152, dec:22,  zhr:15,  src:'Comet Tempel–Tuttle' },
+  { name:'Geminids',        peak:[12,14], win:[[12,4],[12,17]], ra:112, dec:33,  zhr:150, src:'asteroid 3200 Phaethon' },
+  { name:'Ursids',          peak:[12,22], win:[[12,17],[12,26]],ra:217, dec:76,  zhr:10,  src:'Comet 8P/Tuttle' },
+];
+const _ymd=(m,d,y)=>new Date(Date.UTC(y,m-1,d));
+function showerActive(s, now){
+  const y=now.getUTCFullYear(), st=_ymd(s.win[0][0],s.win[0][1],y), en=_ymd(s.win[1][0],s.win[1][1],y);
+  return (en<st) ? (now>=st || now<=en) : (now>=st && now<=en);   // handle Dec→Jan wrap
+}
+function showerNextPeak(s, now){
+  const y=now.getUTCFullYear(); let p=_ymd(s.peak[0],s.peak[1],y);
+  if(p < new Date(now.getTime()-2*86400000)) p=_ymd(s.peak[0],s.peak[1],y+1);
+  return p;
+}
+const _fmtMD=d=>d.toLocaleDateString(undefined,{month:'short',day:'numeric',timeZone:'UTC'});
+function showerInfo(s){
+  const now=new Date(simNow()), act=showerActive(s,now), np=showerNextPeak(s,now);
+  const days=Math.round((np-now)/86400000);
+  const when = act ? 'Active now — peaks '+_fmtMD(np) : 'Peaks '+_fmtMD(np)+(days>0?(' (in '+days+' days)'):'');
+  return { tag:'Meteor shower'+(act?' · active':''), name:s.name,
+    text:when+'. Up to ~'+s.zhr+' meteors/hr at peak, from debris of '+s.src+'.' };
+}
+const showerGroup=new THREE.Group(); showerGroup.visible=false; scene.add(showerGroup);
+const showerItems=[];
+(function buildShowers(){
+  const pos=[];
+  for(const s of SHOWERS){
+    const v=raDecVec(s.ra,s.dec,SKY_R*0.99); pos.push(v.x,v.y,v.z);
+    const el=document.createElement('div'); el.className='shower-label'; el.textContent=s.name;
+    el.addEventListener('click', e=>{ e.stopPropagation(); showInfo(showerInfo(s)); });
+    const lbl=new CSS2DObject(el); lbl.position.copy(v); showerGroup.add(lbl);
+    showerItems.push({ s, el });
+  }
+  const g=new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  showerGroup.add(new THREE.Points(g, new THREE.PointsMaterial({ color:0xffb060, size:11, sizeAttenuation:false, map:STAR_TEX, transparent:true, depthWrite:false })));
+})();
+function updateShowers(){
+  if(!showerGroup.visible) return;
+  const now=new Date(simNow());
+  for(const it of showerItems){
+    const act=showerActive(it.s,now), np=showerNextPeak(it.s,now);
+    it.el.className='shower-label'+(act?' active':'');
+    it.el.textContent=it.s.name+(act?' ● now':' · '+_fmtMD(np));
+  }
+}
+
+// ---- Comets: heliocentric Keplerian elements -> live geocentric sky direction ----
+const KGAUSS=0.01720209895;   // Gaussian gravitational constant (rad/day)
+const COMETS=[
+  { name:'1P/Halley', q:0.58597811, e:0.96714291, i:162.26269, om:58.42008, w:111.33249, Tp:2446470.95,
+    fact:'The most famous comet — visible from Earth roughly every 76 years. Last passed in 1986; returns in 2061.' },
+  { name:'2P/Encke', q:0.33586, e:0.84833, i:11.781, om:334.568, w:186.546, Tp:2460244.5,
+    fact:'Has the shortest known orbital period of any comet — about 3.3 years.' },
+  { name:'67P/Churyumov–Gerasimenko', q:1.2104, e:0.6405, i:7.040, om:50.147, w:12.780, Tp:2459521.5,
+    fact:"Target of ESA's Rosetta mission, which landed Philae on its surface in 2014." },
+];
+function cometHelio(c, JD){          // heliocentric ecliptic position (AU)
+  const a=c.q/(1-c.e), n=KGAUSS/Math.pow(a,1.5);
+  let M=n*(JD-c.Tp); M=Math.atan2(Math.sin(M),Math.cos(M));
+  let E=M; for(let k=0;k<80;k++){ const dE=(E-c.e*Math.sin(E)-M)/(1-c.e*Math.cos(E)); E-=dE; if(Math.abs(dE)<1e-9) break; }
+  const xv=a*(Math.cos(E)-c.e), yv=a*Math.sqrt(1-c.e*c.e)*Math.sin(E);
+  const r=Math.hypot(xv,yv), u=Math.atan2(yv,xv)+c.w*PL_RAD;
+  const om=c.om*PL_RAD, i=c.i*PL_RAD, cu=Math.cos(u),su=Math.sin(u),co=Math.cos(om),so=Math.sin(om),ci=Math.cos(i),si=Math.sin(i);
+  return [ r*(co*cu - so*su*ci), r*(so*cu + co*su*ci), r*(su*si) ];
+}
+function cometGeo(c, date){
+  const JD=date.getTime()/86400000 + 2440587.5, T=(JD-2451545.0)/36525;
+  const e=plHelio('Earth',T), p=cometHelio(c,JD);
+  const gx=p[0]-e[0], gy=p[1]-e[1], gz=p[2]-e[2], distAU=Math.hypot(gx,gy,gz);
+  const xq=gx, yq=gy*Math.cos(PL_EPS)-gz*Math.sin(PL_EPS), zq=gy*Math.sin(PL_EPS)+gz*Math.cos(PL_EPS);
+  return { dir:new THREE.Vector3(xq, zq, -yq).normalize(), distAU };
+}
+function cometInfo(c){
+  const g=cometGeo(c, new Date(simNow()));
+  return { tag:'Comet', name:c.name, text:c.fact+' Currently ~'+g.distAU.toFixed(2)+' AU from Earth.' };
+}
+const cometGroup=new THREE.Group(); cometGroup.visible=false; scene.add(cometGroup);
+const cometItems=[]; let cometPosAttr=null;
+(function buildComets(){
+  const pos=new Float32Array(COMETS.length*3);
+  COMETS.forEach(c=>{
+    const el=document.createElement('div'); el.className='comet-label'; el.textContent='☄ '+c.name.split('/')[0];
+    el.addEventListener('click', e=>{ e.stopPropagation(); showInfo(cometInfo(c)); });
+    const lbl=new CSS2DObject(el); cometGroup.add(lbl);
+    cometItems.push({ c, el, lbl });
+  });
+  const g=new THREE.BufferGeometry(); cometPosAttr=new THREE.BufferAttribute(pos,3); g.setAttribute('position', cometPosAttr);
+  cometGroup.add(new THREE.Points(g, new THREE.PointsMaterial({ color:0x9fe8ff, size:12, sizeAttenuation:false, map:STAR_TEX, transparent:true, depthWrite:false })));
+})();
+function updateComets(){
+  if(!cometGroup.visible) return;
+  const date=new Date(simNow());
+  cometItems.forEach((it,idx)=>{
+    const v=cometGeo(it.c,date).dir.multiplyScalar(SKY_R*0.985);
+    it.lbl.position.copy(v);
+    cometPosAttr.array[idx*3]=v.x; cometPosAttr.array[idx*3+1]=v.y; cometPosAttr.array[idx*3+2]=v.z;
+  });
+  cometPosAttr.needsUpdate=true;
+}
+
+// Toggle wiring (each layer independent; refresh dynamic layers on enable).
+let lastSkyUpd=0;
+function toggleSky(btn, group, onEnable){
+  const on=!group.visible; group.visible=on; btn.classList.toggle('active', on); if(on && onEnable) onEnable();
+}
+document.getElementById('sky-const').addEventListener('click', function(){ toggleSky(this, constGroup); });
+document.getElementById('sky-showers').addEventListener('click', function(){ toggleSky(this, showerGroup, updateShowers); });
+document.getElementById('sky-comets').addEventListener('click', function(){ toggleSky(this, cometGroup, updateComets); });
 
 // ---------- Live satellites ----------
 // The ISS is tracked exactly on the main thread (single sat, with its trail).
@@ -1377,6 +1559,7 @@ function tick(now){
   if(groups.iss) updateGroup(groups.iss,date);
   updateCloud();
   if(now-lastPlanetUpd>2500){ updatePlanets(date); lastPlanetUpd=now; }   // planets drift slowly
+  if(now-lastSkyUpd>2000){ updateShowers(); updateComets(); lastSkyUpd=now; }   // refresh active showers + comet positions
   // Show planet labels only when zoomed out toward them; hide a planet's own
   // label while it's the selected body (the selection label already names it).
   const plLabels = camera.position.length()>28;
