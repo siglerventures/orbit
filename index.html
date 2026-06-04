@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="1.6">
+<meta name="app-rev" content="1.7">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -296,14 +296,18 @@ const sun = new THREE.DirectionalLight(0xffffff, 2.2); sun.position.copy(sunDir)
 scene.add(sun); scene.add(new THREE.AmbientLight(0x223044, 0.5));
 
 // ---------- Post-processing (bloom + ACES tone mapping) ----------
-const composer = new EffectComposer(renderer);
-composer.addPass(new RenderPass(scene, camera));
-const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight),
-  0.62,   // strength — atmosphere limb, city lights, stars and the sunlit specular glow
-  0.5,    // radius
-  0.72);  // threshold — keep the daylit disc from blowing out
-composer.addPass(bloomPass);
-composer.addPass(new OutputPass());   // applies tone mapping + sRGB at the end of the chain
+// Guarded: if the composer can't be built on this GPU, fall back to plain
+// rendering rather than a black screen.
+let composer = null;
+try {
+  composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight),
+    0.62,   // strength — atmosphere limb, city lights, stars and the sunlit specular glow
+    0.5,    // radius
+    0.72)); // threshold — keep the daylit disc from blowing out
+  composer.addPass(new OutputPass());   // applies tone mapping + sRGB at the end of the chain
+} catch(e){ console.warn('Post-processing unavailable, using direct render:', e); composer=null; }
 
 // Real subsolar (sun) direction in scene coords for the given date. Low-precision
 // solar position (≈0.01°), mapped through the same ECI->scene axis swap as the sats.
@@ -1024,7 +1028,7 @@ function tick(now){
   const mi=(trueFromDisplay(camera.position.length())-1)*EARTH_MI;   // HUD always reports true altitude
   altVal.textContent=fmt(Math.max(0,mi))+' mi'; regionVal.textContent=region(Math.max(0,mi));
   timeVal.textContent=date.toISOString().substr(11,8);
-  composer.render();
+  if(composer) composer.render(); else renderer.render(scene,camera);
   labelRenderer.render(scene,camera);
   requestAnimationFrame(tick);
 }
@@ -1036,7 +1040,7 @@ requestAnimationFrame(tick);
 addEventListener('resize',()=>{
   camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(innerWidth,innerHeight);
-  composer.setSize(innerWidth,innerHeight);
+  if(composer) composer.setSize(innerWidth,innerHeight);
   labelRenderer.setSize(innerWidth,innerHeight);
   if(cloudViewH) cloudViewH.value = innerHeight*Math.min(devicePixelRatio,2)*0.5;
 });
