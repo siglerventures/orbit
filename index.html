@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.5">
+<meta name="app-rev" content="3.6">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -143,6 +143,27 @@ document.addEventListener('DOMContentLoaded', function(){
   #explore .exrow:hover { background:rgba(40,70,120,0.7); border-color:var(--accent); }
   #explore .exk { color:var(--muted); white-space:nowrap; }
   #explore .exv { color:var(--fg); font-weight:600; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+  /* Passes — location button (📍) + upcoming-pass popover. */
+  #passBtn { position:fixed; z-index:60; top:16px; left:calc(50% + 196px);
+    width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    font-size:17px; cursor:pointer; -webkit-tap-highlight-color:transparent;
+    background:radial-gradient(circle at 32% 28%, rgba(120,220,150,0.30), rgba(20,30,48,0.72));
+    border:1px solid rgba(120,220,150,0.45); backdrop-filter:blur(6px); box-shadow:0 4px 14px rgba(0,0,0,0.4);
+    transition:transform .15s, box-shadow .25s, border-color .25s, background .25s; }
+  #passBtn:hover { transform:translateY(-1px); background:radial-gradient(circle at 32% 28%, rgba(120,220,150,0.5), rgba(30,45,72,0.82));
+    box-shadow:0 0 18px rgba(120,220,150,0.45), 0 4px 14px rgba(0,0,0,0.4); }
+  #passBtn:active { transform:scale(0.9); }
+  #passes { position:fixed; z-index:60; top:64px; left:50%; transform:translateX(-50%);
+    width:312px; max-width:92vw; display:none; flex-direction:column; gap:5px; padding:10px; }
+  #passes.show { display:flex; }
+  #passes .exhead { font-size:10px; text-transform:uppercase; letter-spacing:1.3px; color:var(--muted); margin-bottom:3px; }
+  #passes .pstat { font-size:11.5px; color:var(--fg); margin-bottom:4px; line-height:1.45; }
+  #passes .prow { display:flex; justify-content:space-between; align-items:center; gap:8px; text-align:left;
+    background:rgba(20,30,48,0.6); border:1px solid rgba(120,160,210,0.22); border-radius:8px; padding:6px 10px; cursor:pointer; font-size:12px; color:var(--fg); }
+  #passes .prow:hover { background:rgba(40,70,120,0.7); border-color:var(--accent); }
+  #passes .pvis { color:#ffd86b; font-weight:600; white-space:nowrap; }
+  #passes .pdim { color:var(--muted); white-space:nowrap; }
   .sat-label { font-size:11px; color:#ffe7b0; background:rgba(10,16,28,0.66); border:1px solid rgba(242,182,90,0.45);
     padding:2px 7px; border-radius:7px; white-space:nowrap; pointer-events:none; text-shadow:0 1px 2px #000; margin-top:-14px; }
   .body-label { font-size:11px; color:var(--muted); background:rgba(10,16,28,0.55); border:1px solid rgba(120,160,210,0.25);
@@ -183,6 +204,8 @@ document.addEventListener('DOMContentLoaded', function(){
     #homeBtn { top:auto; bottom:14px; left:14px; }   /* clear of the search bar on small screens */
     #exploreBtn { top:auto; bottom:14px; left:62px; }
     #explore { top:auto; bottom:62px; }
+    #passBtn { top:auto; bottom:14px; left:110px; }
+    #passes { top:auto; bottom:62px; }
   }
 
   /* ===== Access shell (login gate · footer · modals) ===== */
@@ -280,6 +303,13 @@ document.addEventListener('DOMContentLoaded', function(){
     <button class="exrow" data-ex="high"><span class="exk">🛰️ Farthest out</span><span class="exv" id="ex-high">—</span></button>
     <button class="exrow" data-ex="fast"><span class="exk">⚡ Fastest</span><span class="exv" id="ex-fast">—</span></button>
     <button class="exrow" data-ex="rand"><span class="exk">🎲 Random satellite</span><span class="exv">surprise me</span></button>
+  </div>
+
+  <button id="passBtn" title="Satellite passes over your location" aria-label="Satellite passes over your location">📍</button>
+  <div id="passes" class="panel">
+    <div class="exhead">Passes over you</div>
+    <div class="pstat" id="passStat">Tap to use your location and see upcoming ISS passes.</div>
+    <div id="passList"></div>
   </div>
 
   <div id="nav" class="panel" style="background:none;border:none;backdrop-filter:none;padding:0;">
@@ -1659,6 +1689,82 @@ explorePanel.querySelectorAll('.exrow').forEach(row=>row.addEventListener('click
   if(idx>=0){ focusConstellation(null); selectCloud(idx,true); }
   explorePanel.classList.remove('show');
 }));
+
+// ---------- Passes over your location ----------
+// Predicts upcoming ISS passes for the visitor's location (real clock, not sim
+// time), flagging the naked-eye-visible ones (satellite sunlit while the sky is
+// dark). All offline from the loaded ISS TLE + satellite.js look-angles.
+const passBtn=document.getElementById('passBtn'), passPanel=document.getElementById('passes');
+const passStat=document.getElementById('passStat'), passList=document.getElementById('passList');
+let observerGd=null;
+const COMPASS=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+const compass=r=>COMPASS[Math.round((((r*180/Math.PI)%360)+360)%360/22.5)%16];
+function sunEciUnit(date){
+  const d=date.getTime()/86400000+2440587.5-2451545.0, rad=Math.PI/180;
+  const g=(357.529+0.98560028*d)*rad, q=280.459+0.98564736*d;
+  const L=(q+1.915*Math.sin(g)+0.020*Math.sin(2*g))*rad, e=(23.439-0.00000036*d)*rad;
+  return { x:Math.cos(L), y:Math.cos(e)*Math.sin(L), z:Math.sin(e)*Math.sin(L) };
+}
+function satSunlit(eci, s){               // eci km (ECI), s = sun unit (ECI)
+  const dot=eci.x*s.x+eci.y*s.y+eci.z*s.z; if(dot>=0) return true;
+  const px=eci.x-dot*s.x, py=eci.y-dot*s.y, pz=eci.z-dot*s.z;
+  return Math.hypot(px,py,pz) > 6378;     // outside Earth's shadow cylinder -> lit
+}
+function obsSunElevDeg(date){
+  const s=sunEciUnit(date), AU=1.496e8, gmst=satellite.gstime(date);
+  const ecf=satellite.eciToEcf({x:s.x*AU,y:s.y*AU,z:s.z*AU}, gmst);
+  return satellite.ecfToLookAngles(observerGd, ecf).elevation*180/Math.PI;
+}
+function issLookAngles(date){
+  const sr=groups.iss && groups.iss.satrecs[0]; if(!sr||!observerGd) return null;
+  let pv; try{ pv=satellite.propagate(sr,date); }catch(_){ return null; } if(!pv||!pv.position) return null;
+  const la=satellite.ecfToLookAngles(observerGd, satellite.eciToEcf(pv.position, satellite.gstime(date)));
+  return { el:la.elevation*180/Math.PI, az:la.azimuth, eci:pv.position };
+}
+function predictISSPasses(hours, maxPasses){
+  if(!observerGd || !(groups.iss && groups.iss.satrecs[0])) return [];
+  const step=20000, start=Date.now(), end=start+hours*3600000;
+  const passes=[]; let cur=null;
+  for(let t=start; t<end && passes.length<maxPasses; t+=step){
+    const d=new Date(t), la=issLookAngles(d); if(!la) continue;
+    if(la.el>=10){
+      if(!cur) cur={ start:d, startAz:la.az, maxEl:la.el, maxAz:la.az, visible:false };
+      if(la.el>cur.maxEl){ cur.maxEl=la.el; cur.maxAz=la.az; }
+      if(!cur.visible && satSunlit(la.eci, sunEciUnit(d)) && obsSunElevDeg(d) < -6) cur.visible=true;
+      cur.end=d; cur.endAz=la.az;
+    } else if(cur){ passes.push(cur); cur=null; }
+  }
+  return passes;
+}
+const fmtPassTime=d=>d.toLocaleString(undefined,{weekday:'short',hour:'numeric',minute:'2-digit'});
+function renderPasses(){
+  const now=issLookAngles(new Date());
+  passStat.innerHTML = (now && now.el>0)
+    ? '🛰️ The ISS is <b>overhead now</b> — '+Math.round(now.el)+'° up toward the '+compass(now.az)+'.'
+    : 'Upcoming ISS passes above 10° — 👁 marks the naked-eye-visible ones.';
+  const passes=predictISSPasses(72, 6); passList.innerHTML='';
+  if(!passes.length){ const e=document.createElement('div'); e.className='prow pdim';
+    e.textContent='No passes above 10° in the next 3 days.'; passList.appendChild(e); return; }
+  for(const p of passes){
+    const dur=Math.max(1,Math.round((p.end-p.start)/60000));
+    const row=document.createElement('button'); row.className='prow';
+    row.innerHTML='<span>'+fmtPassTime(p.start)+' · '+compass(p.startAz)+'→'+compass(p.endAz)+'</span>'
+      +'<span class="'+(p.visible?'pvis':'pdim')+'">'+Math.round(p.maxEl)+'° · '+dur+'m'+(p.visible?' 👁':'')+'</span>';
+    row.addEventListener('click', ()=>{ flyToISS(); passPanel.classList.remove('show'); });
+    passList.appendChild(row);
+  }
+}
+passBtn.addEventListener('click', ()=>{
+  if(passPanel.classList.contains('show')){ passPanel.classList.remove('show'); return; }
+  explorePanel.classList.remove('show'); passPanel.classList.add('show');
+  if(!(groups.iss && groups.iss.satrecs[0])){ passStat.textContent='ISS data isn’t loaded yet — try again in a moment.'; passList.innerHTML=''; return; }
+  if(observerGd){ renderPasses(); return; }
+  if(!navigator.geolocation){ passStat.textContent='Geolocation isn’t available in this browser.'; passList.innerHTML=''; return; }
+  passStat.textContent='Locating you…'; passList.innerHTML='';
+  navigator.geolocation.getCurrentPosition(
+    pos=>{ observerGd={ longitude:pos.coords.longitude*Math.PI/180, latitude:pos.coords.latitude*Math.PI/180, height:0.1 }; renderPasses(); },
+    _=>{ passStat.textContent='Location permission denied — can’t compute passes.'; passList.innerHTML=''; });
+});
 
 // ---------- Update satellites ----------
 const _p=new THREE.Vector3();
