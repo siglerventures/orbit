@@ -47,11 +47,21 @@ jobs:
           fetch geo      geo
           fetch stations stations
 
+      - name: Fetch star catalog (once / refresh)
+        run: |
+          # Real bright-star catalog (mag < 6) for the inertial sky. The page also
+          # falls back to the jsDelivr copy and then a procedural field, so this is best-effort.
+          if [ ! -s data/stars.json ]; then
+            curl -fsS --retry 3 --retry-delay 5 \
+              "https://cdn.jsdelivr.net/gh/ofrohn/d3-celestial@master/data/stars.6.json" \
+              -o data/stars.json.tmp && mv data/stars.json.tmp data/stars.json || { echo "star catalog fetch failed (non-fatal)"; rm -f data/stars.json.tmp; }
+          fi
+
       - name: Commit if changed
         run: |
           git config user.name  "tle-sync-bot"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/*.txt 2>/dev/null || true
+          git add data/*.txt data/stars.json 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "No TLE changes."
           else
