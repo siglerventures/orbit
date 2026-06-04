@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="1.2">
+<meta name="app-rev" content="1.3">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -220,6 +220,10 @@ document.addEventListener('DOMContentLoaded', function(){
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import * as satellite from 'satellite.js';
 
 const EARTH_MI = 3959;          // Earth radius in miles (for the altitude HUD)
@@ -258,6 +262,8 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;   // cinematic highlight roll-off
+renderer.toneMappingExposure = 1.12;
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.002, 4000);
@@ -269,9 +275,33 @@ controls.rotateSpeed = 0.5; controls.minDistance = 1.04; controls.maxDistance = 
 controls.enablePan = false;
 controls.enableZoom = false;   // custom smooth zoom handled below
 
-const sunDir = new THREE.Vector3(5, 1.6, 3).normalize();
+const sunDir = new THREE.Vector3(5, 1.6, 3).normalize();   // overwritten each frame by the real subsolar direction
 const sun = new THREE.DirectionalLight(0xffffff, 2.2); sun.position.copy(sunDir);
 scene.add(sun); scene.add(new THREE.AmbientLight(0x223044, 0.5));
+
+// ---------- Post-processing (bloom + ACES tone mapping) ----------
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight),
+  0.62,   // strength — atmosphere limb, city lights, stars and the sunlit specular glow
+  0.5,    // radius
+  0.72);  // threshold — keep the daylit disc from blowing out
+composer.addPass(bloomPass);
+composer.addPass(new OutputPass());   // applies tone mapping + sRGB at the end of the chain
+
+// Real subsolar (sun) direction in scene coords for the given date. Low-precision
+// solar position (≈0.01°), mapped through the same ECI->scene axis swap as the sats.
+const _sunV = new THREE.Vector3();
+function sunSceneDir(date){
+  const d = date.getTime()/86400000 + 2440587.5 - 2451545.0;   // days since J2000
+  const rad = Math.PI/180;
+  const g = (357.529 + 0.98560028*d) * rad;
+  const q =  280.459 + 0.98564736*d;
+  const L = (q + 1.915*Math.sin(g) + 0.020*Math.sin(2*g)) * rad;
+  const e = (23.439 - 0.00000036*d) * rad;
+  const x = Math.cos(L), y = Math.cos(e)*Math.sin(L), z = Math.sin(e)*Math.sin(L);  // equatorial ECI
+  return _sunV.set(x, z, -y).normalize();   // ECI (x,y,z) -> scene (x,z,-y)
+}
 
 // ---------- Textures ----------
 const manager = new THREE.LoadingManager();
@@ -769,6 +799,9 @@ function tick(now){
   const date=new Date(simNow());
   const gmst=satellite.gstime(date);
   earthGroup.rotation.y=gmst; clouds.rotation.y=now*0.000004;
+  // Real terminator: point the sun (lighting + night-lights shader) at the true subsolar direction.
+  sunSceneDir(date);
+  uSun.value.copy(_sunV); sun.position.copy(_sunV).multiplyScalar(10);
   // Ease the altitude morph and re-scale the static shells while it moves.
   if(morphActive){
     morph += (morphTarget-morph)*(1-Math.exp(-dt*3.5));
@@ -781,7 +814,7 @@ function tick(now){
   const mi=(trueFromDisplay(camera.position.length())-1)*EARTH_MI;   // HUD always reports true altitude
   altVal.textContent=fmt(Math.max(0,mi))+' mi'; regionVal.textContent=region(Math.max(0,mi));
   timeVal.textContent=date.toISOString().substr(11,8);
-  renderer.render(scene,camera);
+  composer.render();
   requestAnimationFrame(tick);
 }
 
@@ -792,6 +825,7 @@ requestAnimationFrame(tick);
 addEventListener('resize',()=>{
   camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(innerWidth,innerHeight);
+  composer.setSize(innerWidth,innerHeight);
   if(cloudViewH) cloudViewH.value = innerHeight*Math.min(devicePixelRatio,2)*0.5;
 });
 </script>
