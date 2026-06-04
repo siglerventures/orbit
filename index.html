@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="1.8">
+<meta name="app-rev" content="1.9">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -197,12 +197,12 @@ document.addEventListener('DOMContentLoaded', function(){
   </div>
 
   <div id="nav" class="panel" style="background:none;border:none;backdrop-filter:none;padding:0;">
-    <button data-shellmi="0" data-standoff="0">Surface <small>0 mi</small></button>
-    <button data-shellmi="250" data-standoff="1.46">ISS <small>250 mi</small></button>
-    <button data-shellmi="340" data-standoff="1.70">Starlink <small>340 mi</small></button>
-    <button data-shellmi="12550" data-standoff="2.16">GPS <small>12,550 mi</small></button>
-    <button data-shellmi="22236" data-standoff="2.12">GEO <small>22,236 mi</small></button>
-    <button data-shellmi="238900" data-standoff="1.55">Moon <small>238,900 mi</small></button>
+    <button data-shellmi="0" data-standoff="0" data-track="all">Surface <small>0 mi</small></button>
+    <button data-shellmi="250" data-standoff="1.46" data-track="iss">ISS <small>250 mi</small></button>
+    <button data-shellmi="340" data-standoff="1.70" data-track="starlink">Starlink <small>340 mi</small></button>
+    <button data-shellmi="12550" data-standoff="2.16" data-track="gps">GPS <small>12,550 mi</small></button>
+    <button data-shellmi="22236" data-standoff="2.12" data-track="geo">GEO <small>22,236 mi</small></button>
+    <button data-shellmi="238900" data-standoff="1.55" data-track="all">Moon <small>238,900 mi</small></button>
   </div>
 
   <div id="hud" class="panel">
@@ -828,6 +828,15 @@ function describeCloud(idx){
 }
 
 let liveReady=false;
+// Per-constellation tallies for the Tracking readout. `trackDefault` is the
+// full live/snapshot total; `trackCounts` is keyed by the nav buttons' data-track.
+let trackDefault='', trackCounts={};
+const trackLabel=(n,l)=> n ? n.toLocaleString()+' '+l : '—';
+function setTracking(key){
+  const cv=document.getElementById('countVal'); if(!cv) return;
+  if(trackCounts[key]) cv.textContent=trackCounts[key];
+  else if(trackDefault) cv.textContent=trackDefault;
+}
 async function loadSatellites(){
   document.getElementById('loadMsg').textContent='Fetching live orbital data…';
 
@@ -863,7 +872,18 @@ async function loadSatellites(){
     fallbackShells();
     return;
   }
-  document.getElementById('countVal').textContent=total.toLocaleString()+' sats'+(snapshot?' (snapshot)':' (live)');
+  const countText=total.toLocaleString()+' sats'+(snapshot?' (snapshot)':' (live)');
+  document.getElementById('countVal').textContent=countText;
+  // Tally each constellation so a focused preset can show its own count.
+  const byShort={}; for(const m of cloudMeta) byShort[m.short]=(byShort[m.short]||0)+1;
+  trackDefault=countText;
+  trackCounts={
+    all:      countText,
+    iss:      (groups.iss?1:0)+' · ISS',
+    starlink: trackLabel(byShort['Starlink'],     'Starlink'),
+    gps:      trackLabel(byShort['GPS · NAVSTAR'], 'GPS'),
+    geo:      trackLabel(byShort['GEO satellite'], 'GEO'),
+  };
   document.getElementById('statusText').textContent= snapshot ? 'Live · daily snapshot + SGP4'
     : (anyLive ? 'Live orbital data' : 'Live · ISS tracking');
 }
@@ -941,6 +961,7 @@ const setTarget = d => { targetDist = THREE.MathUtils.clamp(d, MIND, MAXD); };
 // shell's true altitude through the (target-state) remap, then stand off by a factor.
 document.querySelectorAll('#nav button').forEach(b=>
   b.addEventListener('click', ()=>{
+    setTracking(b.dataset.track);               // reflect the focused constellation's count
     const shellMi=parseFloat(b.dataset.shellmi);
     if(!shellMi){ setTarget(1.28); return; }      // Surface
     const standoff=parseFloat(b.dataset.standoff)||1.5;
