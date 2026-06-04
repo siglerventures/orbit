@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.3">
+<meta name="app-rev" content="3.4">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -564,16 +564,18 @@ async function doSearch(qRaw){
   searchMsg('Searching…');
   if(/^\d+$/.test(q)){
     const id=parseInt(q,10);
+    if(id===25544 && flyToISS()){ searchMsg(''); return; }      // ISS is tracked separately from the cloud
     const idx=cloudMeta.findIndex(m=>m.id===id);
     if(idx>=0){ selectCloud(idx,true); searchMsg(''); return; }
     try{
       const r=await fetch(`${API}/${id}`); if(!r.ok) throw 0; const j=await r.json();
       if(selectRecTLE({ name:(j.name||'').trim()||('NORAD '+id), l1:j.line1, l2:j.line2, id })) searchMsg('');
       else searchMsg('Could not load that NORAD id.');
-    }catch(_){ searchMsg('NORAD '+id+' not found.'); }
+    }catch(_){ searchMsg('NORAD '+id+' isn’t in the loaded set (live lookup unavailable).'); }
     return;
   }
   const ql=q.toLowerCase();
+  if((ql==='iss'||ql.includes('space station')) && flyToISS()){ searchMsg(''); return; }   // ISS by name
   // Skywatch objects (constellations, comets, meteor showers) before satellites.
   if(skywatchSearch(ql)){ searchMsg(''); return; }
   let idx=cloudMeta.findIndex(m=>m.name && m.name.toLowerCase()===ql);
@@ -582,8 +584,8 @@ async function doSearch(qRaw){
   try{
     const recs=await fetchSearchTLE(q,1);
     if(recs.length && selectRecTLE(recs[0])) searchMsg('');
-    else searchMsg('No match for “'+q+'”.');
-  }catch(_){ searchMsg('Search failed — try a NORAD id.'); }
+    else searchMsg('No match in the loaded set for “'+q+'” (live lookup unavailable).');
+  }catch(_){ searchMsg('No match in the loaded set for “'+q+'” (live lookup unavailable).'); }
 }
 const searchInput=document.getElementById('searchInput');
 searchInput.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); doSearch(searchInput.value); } });
@@ -1527,7 +1529,7 @@ document.querySelectorAll('#nav button').forEach(b=>
     if(key==='iss' && flyToISS()) return;       // ISS: fly to wherever it is right now
     deselect();
     if(!shellMi){ setTarget(1.28); return; }    // Surface
-    if(b.dataset.orient==='moon') flyDir=moon.position.clone().normalize();   // Moon: look toward it
+    if(b.dataset.orient==='moon'){ flyDir=moon.position.clone().normalize(); showInfo(moon.userData); }   // Moon: look toward it + show its card (incl. light-travel time)
     setTarget(displayRadiusAt(alt(shellMi), morphTarget) * standoff);     // Moon (or ISS fallback)
   }));
 
@@ -1698,7 +1700,9 @@ function tick(now){
   const plLabels = camera.position.length()>28;
   for(const p of planets) p.label.visible = plLabels && !(selection && selection.kind==='obj' && selection.obj===p.mesh) && !occludedByEarth(p.label);
   moonLabel.visible = !occludedByEarth(moonLabel);
-  for(const lbl of skyLabels){ if(lbl.parent && lbl.parent.visible) lbl.visible = !occludedByEarth(lbl); }   // hide sky labels behind the globe
+  // Sky labels: visible only when their layer is ON *and* not behind the globe.
+  // (CSS2DRenderer ignores parent-group visibility, so we must gate it here.)
+  for(const lbl of skyLabels){ lbl.visible = !!(lbl.parent && lbl.parent.visible) && !occludedByEarth(lbl); }
   updateSelection();
   applyZoom(dt); controls.update();
   const mi=(trueFromDisplay(camera.position.length())-1)*EARTH_MI;   // HUD always reports true altitude
