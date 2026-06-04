@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="2.9">
+<meta name="app-rev" content="3.0">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -89,8 +89,9 @@ document.addEventListener('DOMContentLoaded', function(){
   #nav button.sky:hover { background:rgba(28,70,78,0.65); border-color:#67e0d8; }
   #nav button.sky.active { background:rgba(34,86,92,0.85); border-color:#67e0d8; color:#d6fbf6; }
   /* Skywatch overlay labels on the celestial sphere */
-  .const-label { font-size:10px; letter-spacing:1px; text-transform:uppercase; color:rgba(150,195,255,0.66);
-    background:none; border:none; pointer-events:none; text-shadow:0 0 4px rgba(0,0,0,0.8); }
+  .const-label { font-size:10px; letter-spacing:1px; text-transform:uppercase; color:rgba(150,195,255,0.72);
+    background:none; border:none; cursor:pointer; pointer-events:auto; text-shadow:0 0 4px rgba(0,0,0,0.85); }
+  .const-label:hover { color:#bcd8ff; }
   .shower-label { font-size:10px; color:rgba(255,200,140,0.92); background:rgba(26,16,8,0.55);
     border:1px solid rgba(255,180,110,0.32); border-radius:5px; padding:1px 6px; white-space:nowrap; cursor:pointer; pointer-events:auto; }
   .shower-label.active { color:#ffdca6; border-color:#ffb060; box-shadow:0 0 9px rgba(255,160,80,0.55); }
@@ -836,36 +837,53 @@ function raDecVec(raDeg, decDeg, R){
 // ---- Constellations: bright stars [RA°,Dec° J2000] + index pairs to connect ----
 const CONSTELLATIONS=[
   { name:'Orion', stars:[[88.79,7.41],[81.28,6.35],[85.19,-1.94],[84.05,-1.20],[83.00,-0.30],[86.94,-9.67],[78.63,-8.20]],
-    lines:[[0,1],[0,2],[1,4],[2,3],[3,4],[2,5],[4,6],[5,6]] },
+    lines:[[0,1],[0,2],[1,4],[2,3],[3,4],[2,5],[4,6],[5,6]],
+    fact:'The Hunter — the most recognizable winter constellation. Its three-star Belt points down to Sirius, and the Orion Nebula (M42) hanging below the Belt is a stellar nursery 1,344 light-years away. Red Betelgeuse and blue Rigel mark its shoulder and foot.' },
   { name:'Ursa Major', stars:[[165.93,61.75],[165.46,56.38],[178.46,53.69],[183.86,57.03],[193.51,55.96],[200.98,54.93],[206.89,49.31]],
-    lines:[[0,1],[1,2],[2,3],[3,0],[3,4],[4,5],[5,6]] },
+    lines:[[0,1],[1,2],[2,3],[3,0],[3,4],[4,5],[5,6]],
+    fact:'The Great Bear, containing the Big Dipper asterism. The two stars at the end of the bowl (Dubhe and Merak) are the "Pointers" — follow them to find Polaris, the North Star.' },
   { name:'Cassiopeia', stars:[[2.29,59.15],[10.13,56.54],[14.18,60.72],[21.45,60.24],[28.60,63.67]],
-    lines:[[0,1],[1,2],[2,3],[3,4]] },
+    lines:[[0,1],[1,2],[2,3],[3,4]],
+    fact:'The vain queen of Greek myth, forming a distinctive "W" (or "M") on the opposite side of the north celestial pole from the Big Dipper. Circumpolar, so it never sets for most northern observers.' },
   { name:'Cygnus', stars:[[310.36,45.28],[305.56,40.26],[292.68,27.96],[311.55,33.97],[296.24,45.13]],
-    lines:[[0,1],[1,2],[3,1],[1,4]] },
+    lines:[[0,1],[1,2],[3,1],[1,4]],
+    fact:'The Swan, flying down the Milky Way. Its brightest stars form the "Northern Cross"; brilliant Deneb marks the tail and is one corner of the Summer Triangle.' },
   { name:'Leo', stars:[[152.09,11.97],[151.83,16.76],[154.99,19.84],[168.56,20.52],[177.26,14.57],[168.50,15.43]],
-    lines:[[0,1],[1,2],[2,3],[3,4],[4,5],[5,0]] },
+    lines:[[0,1],[1,2],[2,3],[3,4],[4,5],[5,0]],
+    fact:'The Lion — a herald of spring. A backwards-question-mark "Sickle" outlines its head and mane, anchored by blue-white Regulus, "the little king," sitting almost exactly on the ecliptic.' },
   { name:'Scorpius', stars:[[240.08,-22.62],[241.36,-19.81],[239.71,-26.11],[247.35,-26.43],[248.97,-28.22],[252.97,-34.29],[253.50,-38.05],[263.40,-37.10]],
-    lines:[[1,0],[0,2],[0,3],[3,4],[4,5],[5,6],[6,7]] },
+    lines:[[1,0],[0,2],[0,3],[3,4],[4,5],[5,6],[6,7]],
+    fact:'The Scorpion, curling low across the southern summer sky. Its heart is the red supergiant Antares — "rival of Mars" — and its tail ends in the stinger stars Shaula and Lesath.' },
   { name:'Crux', stars:[[186.65,-63.10],[187.79,-57.11],[191.93,-59.69],[183.79,-58.75]],
-    lines:[[0,1],[2,3]] },
-  { name:'Taurus', stars:[[68.98,16.51],[81.57,28.61],[84.41,21.14]], lines:[[0,1],[0,2]] },
+    lines:[[0,1],[2,3]],
+    fact:'The Southern Cross — the smallest of all 88 constellations, but a vital signpost: the long axis of the cross points toward the south celestial pole. It appears on several national flags.' },
+  { name:'Taurus', stars:[[68.98,16.51],[81.57,28.61],[84.41,21.14]],
+    lines:[[0,1],[0,2]],
+    fact:'The Bull, charging at Orion. Orange Aldebaran is its glaring eye, and the Pleiades (Seven Sisters) star cluster rides on its shoulder. The horns end at the tips Elnath and Zeta Tauri.' },
   { name:'Gemini', stars:[[113.65,31.89],[116.33,28.03],[110.03,21.98],[99.43,16.40],[100.98,25.13],[95.74,22.51]],
-    lines:[[0,1],[0,4],[4,5],[1,2],[2,3]] },
+    lines:[[0,1],[0,4],[4,5],[1,2],[2,3]],
+    fact:'The Twins, marked by the bright pair Castor and Pollux as their heads. A winter favorite; the Geminid meteor shower radiates from near Castor each December.' },
   { name:'Canis Major', stars:[[101.29,-16.72],[95.67,-17.96],[107.10,-26.39],[104.66,-28.97],[111.02,-29.30]],
-    lines:[[1,0],[0,2],[2,3],[2,4],[0,3]] },
-  { name:'Lyra', stars:[[279.23,38.78],[282.52,33.36],[284.74,32.69],[283.63,36.90]], lines:[[0,1],[1,2],[2,3],[3,0]] },
-  { name:'Boötes', stars:[[213.92,19.18],[221.25,27.07],[225.49,40.39],[218.02,38.31]], lines:[[0,1],[1,2],[2,3],[3,0]] },
+    lines:[[1,0],[0,2],[2,3],[2,4],[0,3]],
+    fact:'The Great Dog, following Orion across the sky. It contains Sirius — the brightest star in the entire night sky, just 8.6 light-years away.' },
+  { name:'Lyra', stars:[[279.23,38.78],[282.52,33.36],[284.74,32.69],[283.63,36.90]],
+    lines:[[0,1],[1,2],[2,3],[3,0]],
+    fact:'The Harp — small but led by dazzling Vega, the 5th-brightest star and a corner of the Summer Triangle. Between two of its stars lies the famous Ring Nebula (M57).' },
+  { name:'Boötes', stars:[[213.92,19.18],[221.25,27.07],[225.49,40.39],[218.02,38.31]],
+    lines:[[0,1],[1,2],[2,3],[3,0]],
+    fact:'The Herdsman, a kite- or ice-cream-cone-shaped figure anchored by Arcturus — the brightest star in the northern celestial hemisphere. Find it by "arcing to Arcturus" off the Big Dipper\'s handle.' },
 ];
 const constGroup=new THREE.Group(); constGroup.visible=false; scene.add(constGroup);
+function constInfo(c){ return { tag:'Constellation', name:c.name, text:c.fact }; }
 (function buildConstellations(){
   const verts=[];
   for(const c of CONSTELLATIONS){
     const vs=c.stars.map(s=>raDecVec(s[0],s[1],SKY_R*0.995));
     for(const seg of c.lines){ const a=vs[seg[0]], b=vs[seg[1]]; verts.push(a.x,a.y,a.z, b.x,b.y,b.z); }
-    const cen=new THREE.Vector3(); vs.forEach(v=>cen.add(v)); cen.multiplyScalar(1/vs.length);
+    const cen=new THREE.Vector3(); vs.forEach(v=>cen.add(v)); cen.multiplyScalar(1/vs.length).setLength(SKY_R*0.99);
     const el=document.createElement('div'); el.className='const-label'; el.textContent=c.name;
-    const lbl=new CSS2DObject(el); lbl.position.copy(cen.setLength(SKY_R*0.99)); constGroup.add(lbl);
+    el.addEventListener('click', e=>{ e.stopPropagation(); showInfo(constInfo(c)); lookAtSky(cen); });
+    const lbl=new CSS2DObject(el); lbl.position.copy(cen); constGroup.add(lbl);
   }
   const g=new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(verts,3));
   constGroup.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color:0x6fb6ff, transparent:true, opacity:0.32 })));
@@ -900,7 +918,9 @@ function showerInfo(s){
   const days=Math.round((np-now)/86400000);
   const when = act ? 'Active now — peaks '+_fmtMD(np) : 'Peaks '+_fmtMD(np)+(days>0?(' (in '+days+' days)'):'');
   return { tag:'Meteor shower'+(act?' · active':''), name:s.name,
-    text:when+'. Up to ~'+s.zhr+' meteors/hr at peak, from debris of '+s.src+'.' };
+    text:when+'. At its peak you may see up to ~'+s.zhr+' meteors per hour under dark skies. '
+      +'The "shooting stars" are dust shed by '+s.src+', burning up as Earth ploughs through the trail. '
+      +'They appear to streak away from the marked radiant — best viewed after midnight, no telescope needed.' };
 }
 const showerGroup=new THREE.Group(); showerGroup.visible=false; scene.add(showerGroup);
 const showerItems=[];
@@ -909,7 +929,7 @@ const showerItems=[];
   for(const s of SHOWERS){
     const v=raDecVec(s.ra,s.dec,SKY_R*0.99); pos.push(v.x,v.y,v.z);
     const el=document.createElement('div'); el.className='shower-label'; el.textContent=s.name;
-    el.addEventListener('click', e=>{ e.stopPropagation(); showInfo(showerInfo(s)); });
+    el.addEventListener('click', e=>{ e.stopPropagation(); showInfo(showerInfo(s)); lookAtSky(v); });
     const lbl=new CSS2DObject(el); lbl.position.copy(v); showerGroup.add(lbl);
     showerItems.push({ s, el });
   }
@@ -954,7 +974,11 @@ function cometGeo(c, date){
 }
 function cometInfo(c){
   const g=cometGeo(c, new Date(simNow()));
-  return { tag:'Comet', name:c.name, text:c.fact+' Currently ~'+g.distAU.toFixed(2)+' AU from Earth.' };
+  const a=c.q/(1-c.e), P=Math.pow(a,1.5);   // orbital period in years
+  return { tag:'Comet', name:c.name,
+    text:c.fact+' It orbits the Sun every ~'+(P<100?P.toFixed(1):Math.round(P))+' years, swinging from '
+      +c.q.toFixed(2)+' AU at closest to '+(c.q*(1+c.e)/(1-c.e)).toFixed(1)+' AU at farthest. '
+      +'Right now it is ~'+g.distAU.toFixed(2)+' AU from Earth.' };
 }
 const cometGroup=new THREE.Group(); cometGroup.visible=false; scene.add(cometGroup);
 const cometItems=[]; let cometPosAttr=null;
@@ -962,9 +986,10 @@ const cometItems=[]; let cometPosAttr=null;
   const pos=new Float32Array(COMETS.length*3);
   COMETS.forEach(c=>{
     const el=document.createElement('div'); el.className='comet-label'; el.textContent='☄ '+c.name.split('/')[0];
-    el.addEventListener('click', e=>{ e.stopPropagation(); showInfo(cometInfo(c)); });
-    const lbl=new CSS2DObject(el); cometGroup.add(lbl);
-    cometItems.push({ c, el, lbl });
+    const item={ c, el, lbl:null };
+    el.addEventListener('click', e=>{ e.stopPropagation(); showInfo(cometInfo(c)); if(item.lbl) lookAtSky(item.lbl.position); });
+    const lbl=new CSS2DObject(el); cometGroup.add(lbl); item.lbl=lbl;
+    cometItems.push(item);
   });
   const g=new THREE.BufferGeometry(); cometPosAttr=new THREE.BufferAttribute(pos,3); g.setAttribute('position', cometPosAttr);
   cometGroup.add(new THREE.Points(g, new THREE.PointsMaterial({ color:0x9fe8ff, size:12, sizeAttenuation:false, map:STAR_TEX, transparent:true, depthWrite:false })));
@@ -980,10 +1005,18 @@ function updateComets(){
   cometPosAttr.needsUpdate=true;
 }
 
+// Glide the camera out to the celestial sphere and (optionally) face a sky point.
+// Overlays sit at SKY_R; the camera looks toward the origin, so to centre a sky
+// direction D we sit on the opposite side (-D) and pull out near max distance.
+function lookAtSky(dir){
+  if(dir) flyDir=dir.clone().normalize().multiplyScalar(-1);
+  setTarget(MAXD);
+}
 // Toggle wiring (each layer independent; refresh dynamic layers on enable).
 let lastSkyUpd=0;
 function toggleSky(btn, group, onEnable){
-  const on=!group.visible; group.visible=on; btn.classList.toggle('active', on); if(on && onEnable) onEnable();
+  const on=!group.visible; group.visible=on; btn.classList.toggle('active', on);
+  if(on){ deselect(); if(onEnable) onEnable(); setTarget(MAXD); }   // pull way out to see the sky
 }
 document.getElementById('sky-const').addEventListener('click', function(){ toggleSky(this, constGroup); });
 document.getElementById('sky-showers').addEventListener('click', function(){ toggleSky(this, showerGroup, updateShowers); });
@@ -1372,6 +1405,7 @@ const setTarget = d => { targetDist = THREE.MathUtils.clamp(d, MIND, MAXD); };
 // shell's true altitude through the (target-state) remap, then stand off by a factor.
 document.querySelectorAll('#nav button').forEach(b=>
   b.addEventListener('click', ()=>{
+    if(b.classList.contains('sky')) return;        // 🔭 Skywatch toggles handle themselves
     if(b.dataset.planet){ focusConstellation(null); flyToPlanet(b.dataset.planet); return; }   // planets
     const key=b.dataset.track;
     setTracking(key);                           // reflect the focused constellation's count
