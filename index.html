@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="1.0">
+<meta name="app-rev" content="1.2">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -70,6 +70,10 @@ document.addEventListener('DOMContentLoaded', function(){
   #speed button { flex:1; background:rgba(20,30,48,0.6); color:var(--muted); border:1px solid rgba(120,160,210,0.22);
     border-radius:8px; padding:5px 0; font-size:11px; cursor:pointer; }
   #speed button.active { color:var(--fg); border-color:var(--accent); background:rgba(40,70,120,0.6); }
+  #scaleBtn { width:100%; margin-top:8px; background:rgba(20,30,48,0.6); color:var(--muted);
+    border:1px solid rgba(120,160,210,0.22); border-radius:8px; padding:7px 0; font-size:11px; cursor:pointer;
+    transition:background .15s, color .15s, border-color .15s; }
+  #scaleBtn.active { color:var(--fg); border-color:var(--amber); background:rgba(120,90,40,0.5); }
 
   #nav { top:16px; right:16px; display:flex; flex-direction:column; gap:7px; }
   #nav button { background:rgba(20,30,48,0.6); color:var(--fg); border:1px solid rgba(120,160,210,0.22);
@@ -178,12 +182,12 @@ document.addEventListener('DOMContentLoaded', function(){
   </div>
 
   <div id="nav" class="panel" style="background:none;border:none;backdrop-filter:none;padding:0;">
-    <button data-dist="1.28">Surface <small>0 mi</small></button>
-    <button data-dist="1.55">ISS <small>250 mi</small></button>
-    <button data-dist="1.85">Starlink <small>340 mi</small></button>
-    <button data-dist="9">GPS <small>12,550 mi</small></button>
-    <button data-dist="14">GEO <small>22,236 mi</small></button>
-    <button data-dist="95">Moon <small>238,900 mi</small></button>
+    <button data-shellmi="0" data-standoff="0">Surface <small>0 mi</small></button>
+    <button data-shellmi="250" data-standoff="1.46">ISS <small>250 mi</small></button>
+    <button data-shellmi="340" data-standoff="1.70">Starlink <small>340 mi</small></button>
+    <button data-shellmi="12550" data-standoff="2.16">GPS <small>12,550 mi</small></button>
+    <button data-shellmi="22236" data-standoff="2.12">GEO <small>22,236 mi</small></button>
+    <button data-shellmi="238900" data-standoff="1.55">Moon <small>238,900 mi</small></button>
   </div>
 
   <div id="hud" class="panel">
@@ -196,6 +200,7 @@ document.addEventListener('DOMContentLoaded', function(){
       <button data-mult="60">60×</button>
       <button data-mult="600">600×</button>
     </div>
+    <button id="scaleBtn" title="Spread the orbital shells apart so LEO, MEO and GEO are individually navigable. The altitude readout always stays true.">Scale · True</button>
   </div>
 
   <div id="info" class="panel">
@@ -225,6 +230,28 @@ const API = 'https://tle.ivanstanojevic.me/api/tle';
 
 // ECI (km) -> scene vector, with Earth's spin axis mapped to +Y
 const eciToScene = (p, v) => { v.set(p.x / EARTH_KM, p.z / EARTH_KM, -p.y / EARTH_KM); return v; };
+
+// ---------- P1 · Exaggerated / logarithmic altitude mode ----------
+// A radial remap that lifts the orbital shells apart so LEO, MEO and GEO are
+// individually navigable, while the HUD keeps reporting *true* altitude.
+//   displayR(true) = 1 + K·log10(1 + altKm/C)   (altKm derived from the true radius)
+// Tuned so LEO→~1.75-1.97, GPS→~7.8, GEO→~9.0, Moon→~14.2. We morph a 0→1
+// factor so the transition between true and exaggerated scale is a smooth glide.
+const EX_C = 1000, EX_K = 5.1;
+let morph = 0, morphTarget = 0;            // 0 = true scale, 1 = exaggerated
+let morphActive = false;                   // true while easing (drives per-frame re-scale)
+const exaggR = trueR => { const km = (trueR - 1) * EARTH_KM; return 1 + EX_K * Math.log10(1 + Math.max(0, km) / EX_C); };
+const displayRadiusAt = (trueR, m) => (m <= 1e-4 ? trueR : trueR + (exaggR(trueR) - trueR) * m);
+const displayRadius = trueR => displayRadiusAt(trueR, morph);
+// Invert the (monotonic) remap so the camera's display radius -> true radius,
+// keeping the altitude HUD honest in exaggerated mode.
+function trueFromDisplay(R){
+  if(morph <= 1e-4) return R;
+  let lo = 1, hi = 2000;
+  for(let i=0;i<48;i++){ const mid=(lo+hi)*0.5; if(displayRadius(mid) < R) lo=mid; else hi=mid; }
+  return (lo+hi)*0.5;
+}
+const ringScalables = [];   // {obj, trueR} — circles/loops uniformly scaled by the remap
 
 const canvas = document.getElementById('scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
@@ -327,7 +354,9 @@ const pickables = [];
 
 // ---------- Moon (representative position) ----------
 const moon = new THREE.Mesh(new THREE.SphereGeometry(0.273,48,48), new THREE.MeshPhongMaterial({ map:moonTex }));
-const moonR = alt(238900); moon.position.set(moonR*0.82, moonR*0.18, -moonR*0.54);
+const moonTrueR = alt(238900);
+const moonDir = new THREE.Vector3(0.82, 0.18, -0.54).normalize();
+moon.position.copy(moonDir).multiplyScalar(moonTrueR);
 scene.add(moon); pickables.push(moon);
 moon.userData={ tag:'Cislunar space', name:'The Moon — 238,900 mi',
   text:'Earth\u2019s natural satellite, ~60 Earth-radii away — about 960× farther than the ISS.' };
@@ -338,17 +367,25 @@ function ring(radius, inclDeg, color, op){
   for(let i=0;i<=seg;i++){ const a=i/seg*Math.PI*2; pts.push(new THREE.Vector3(Math.cos(a)*radius,0,Math.sin(a)*radius)); }
   const l=new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts),
     new THREE.LineBasicMaterial({ color, transparent:true, opacity:op }));
-  l.rotation.x=THREE.MathUtils.degToRad(inclDeg); scene.add(l); return l;
+  l.rotation.x=THREE.MathUtils.degToRad(inclDeg); scene.add(l);
+  ringScalables.push({ obj:l, trueR:radius });   // tracked for the altitude remap
+  return l;
 }
 ring(alt(62),0,0xf2b65a,0.22);
 ring(alt(22236),0,0xf2b65a,0.4);
 const geoBeacon=new THREE.Mesh(new THREE.SphereGeometry(0.05,16,16), new THREE.MeshBasicMaterial({color:0xffd27a}));
-geoBeacon.position.set(alt(22236),0,0); scene.add(geoBeacon); pickables.push(geoBeacon);
+const geoBeaconTrueR = alt(22236);
+geoBeacon.position.set(geoBeaconTrueR,0,0); scene.add(geoBeacon); pickables.push(geoBeacon);
 geoBeacon.userData={ tag:'Geostationary', name:'GEO — 22,236 mi',
   text:'At 22,236 mi the orbital period equals one day, so the satellite hovers over a fixed point. Used for TV, weather and broadcast comms.' };
 
 // ---------- Live satellites ----------
-const groups = {};   // name -> { satrecs:[], points, beacon }
+// The ISS is tracked exactly on the main thread (single sat, with its trail).
+// Everything else — the full Starlink/GPS/Galileo/GEO/stations sets — is
+// propagated in a Web Worker and drawn as one interpolated point cloud.
+// Data comes from same-origin daily snapshots (data/*.txt, written by the
+// GitHub Action), falling back to the live CORS API, then to representative shells.
+const groups = {};   // dedicated single-sat tracks (ISS) — { satrecs, beacon }
 function makeCloud(count, color, size){
   const geo=new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count*3),3));
@@ -364,13 +401,31 @@ async function fetchById(id){
   const r=await fetch(`${API}/${id}`); if(!r.ok) throw new Error('iss'); const j=await r.json();
   return [satellite.twoline2satrec(j.line1, j.line2)];
 }
-async function fetchSearch(query, pages){
+// Raw TLE records (name / lines / id) from the CORS API — the worker builds satrecs.
+async function fetchSearchTLE(query, pages){
   const out=[];
   for(let p=1;p<=pages;p++){
     const r=await fetch(`${API}/?search=${encodeURIComponent(query)}&page=${p}&page-size=100`);
     if(!r.ok) break; const j=await r.json(); const mem=j.member||[];
-    for(const m of mem) out.push(satellite.twoline2satrec(m.line1, m.line2));
+    for(const m of mem) out.push({ name:(m.name||'').trim(), l1:m.line1, l2:m.line2, id:m.satelliteId });
     if(mem.length<100) break;
+  }
+  return out;
+}
+// Parse a Celestrak TLE text file (3-line, or bare 2-line) into records.
+function parseTLE(text){
+  const lines=text.split(/\r?\n/), out=[];
+  for(let i=0;i<lines.length;i++){
+    const L=lines[i];
+    if(L && L.charAt(0)==='1' && L.charAt(1)===' '){
+      const l2=lines[i+1];
+      if(l2 && l2.charAt(0)==='2'){
+        const prev=i>0?lines[i-1]:'';
+        const name=(prev && prev.charAt(0)!=='1' && prev.charAt(0)!=='2') ? prev.trim() : ('NORAD '+L.slice(2,7).trim());
+        out.push({ name, l1:L, l2, id:parseInt(L.slice(2,7),10) });
+        i++;
+      }
+    }
   }
   return out;
 }
@@ -386,62 +441,236 @@ function issTrail(satrec){
   const l=new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts),
     new THREE.LineBasicMaterial({ color:0x66e0ff, transparent:true, opacity:0.45 }));
   scene.add(l);
+  let mean=0; for(const p of pts) mean+=p.length(); mean/=(pts.length||1);
+  ringScalables.push({ obj:l, trueR:mean });   // nearly-constant LEO radius — uniform scale is exact enough
+}
+
+// ===== Bulk constellation cloud (worker-driven, interpolated) =====
+function dotTexture(){
+  const c=document.createElement('canvas'); c.width=c.height=64; const g=c.getContext('2d');
+  const grd=g.createRadialGradient(32,32,0,32,32,32);
+  grd.addColorStop(0,'rgba(255,255,255,1)'); grd.addColorStop(0.45,'rgba(255,255,255,0.92)');
+  grd.addColorStop(0.7,'rgba(255,255,255,0.35)'); grd.addColorStop(1,'rgba(255,255,255,0)');
+  g.fillStyle=grd; g.fillRect(0,0,64,64); return new THREE.CanvasTexture(c);
+}
+const SAT_GROUPS = [
+  { file:'starlink', search:'starlink', pages:6, color:[0.74,0.89,1.00], size:0.016, tag:'Low Earth Orbit',    short:'Starlink' },
+  { file:'gps',      search:'navstar',  pages:1, color:[0.78,0.94,0.66], size:0.05,  tag:'Medium Earth Orbit', short:'GPS · NAVSTAR' },
+  { file:'galileo',  search:'galileo',  pages:1, color:[0.86,0.78,1.00], size:0.05,  tag:'Medium Earth Orbit', short:'Galileo' },
+  { file:'geo',      search:null,       pages:0, color:[0.95,0.71,0.35], size:0.06,  tag:'Geostationary belt', short:'GEO satellite' },
+  { file:'stations', search:'stations', pages:1, color:[0.61,0.94,1.00], size:0.03,  tag:'Low Earth Orbit',    short:'Station' },
+];
+
+let cloud=null;                 // THREE.Points for the whole bulk constellation
+const cloudMeta=[];             // per-point { name, id, tag, short } for picking
+let cloudWorker=null;
+let cloudPrev=null, cloudCur=null, cloudRecvWall=0;   // double-buffer for interpolation
+const CLOUD_TICK_MS=120;
+let cloudViewH=null;            // shader uniform: half the canvas height in device px
+
+// Module worker (loaded from a Blob URL so we stay single-file). It owns its own
+// satellite.js, builds satrecs from TLE lines, and posts back ECI->scene positions.
+const WORKER_SRC = `
+import * as sat from 'https://esm.sh/satellite.js@5.0.0';
+const EK=6371; let recs=[];
+self.onmessage=function(e){
+  const d=e.data;
+  if(d.type==='load'){
+    recs=d.tles.map(function(t){ try{ return sat.twoline2satrec(t.l1,t.l2); }catch(_){ return null; } });
+    self.postMessage({type:'loaded', n:recs.length});
+  } else if(d.type==='tick'){
+    const date=new Date(d.t), n=recs.length, buf=new Float32Array(n*3);
+    for(let i=0;i<n;i++){
+      const r=recs[i];
+      if(!r){ buf[i*3]=NaN; buf[i*3+1]=NaN; buf[i*3+2]=NaN; continue; }
+      let pv=null; try{ pv=sat.propagate(r,date); }catch(_){ }
+      const p=pv&&pv.position;
+      if(!p){ buf[i*3]=NaN; buf[i*3+1]=NaN; buf[i*3+2]=NaN; continue; }
+      buf[i*3]=p.x/EK; buf[i*3+1]=p.z/EK; buf[i*3+2]=-p.y/EK;
+    }
+    self.postMessage({type:'pos', t:d.t, buf:buf.buffer}, [buf.buffer]);
+  }
+};
+`;
+
+async function loadGroup(g){
+  // same-origin daily snapshot first (full constellation), then the live CORS API
+  try{
+    const r=await fetch('data/'+g.file+'.txt',{cache:'no-cache'});
+    if(r.ok){ const recs=parseTLE(await r.text()); if(recs.length) return {recs, src:'snapshot'}; }
+  }catch(_){}
+  if(g.search){ try{ const recs=await fetchSearchTLE(g.search,g.pages); if(recs.length) return {recs, src:'live'}; }catch(_){} }
+  return {recs:[], src:'none'};
+}
+
+function buildCloud(tles){
+  const n=tles.length;
+  const pos=new Float32Array(n*3), col=new Float32Array(n*3), siz=new Float32Array(n);
+  for(let i=0;i<n;i++){ const t=tles[i]; col[i*3]=t.color[0]; col[i*3+1]=t.color[1]; col[i*3+2]=t.color[2]; siz[i]=t.size; }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  geo.setAttribute('color', new THREE.BufferAttribute(col,3));
+  geo.setAttribute('size', new THREE.BufferAttribute(siz,1));
+  cloudViewH={ value: innerHeight*Math.min(devicePixelRatio,2)*0.5 };
+  const mat=new THREE.ShaderMaterial({
+    uniforms:{ uTex:{value:dotTexture()}, uVH:cloudViewH },
+    vertexShader:`attribute float size; uniform float uVH; varying vec3 vC;
+      void main(){ vC=color; vec4 mv=modelViewMatrix*vec4(position,1.0);
+        gl_PointSize=clamp(size*uVH/(-mv.z), 1.5, 48.0); gl_Position=projectionMatrix*mv; }`,
+    fragmentShader:`uniform sampler2D uTex; varying vec3 vC;
+      void main(){ vec4 tx=texture2D(uTex,gl_PointCoord); if(tx.a<0.12) discard; gl_FragColor=vec4(vC, tx.a); }`,
+    transparent:true, vertexColors:true, depthWrite:false });
+  cloud=new THREE.Points(geo, mat); cloud.frustumCulled=false; scene.add(cloud);
+}
+
+function startCloudDriver(tles){
+  // Prefer a Web Worker; fall back to throttled main-thread propagation.
+  try{
+    const blob=new Blob([WORKER_SRC],{type:'text/javascript'});
+    cloudWorker=new Worker(URL.createObjectURL(blob),{type:'module'});
+    cloudWorker.onmessage=(e)=>{ const d=e.data;
+      if(d.type==='pos'){ cloudPrev=cloudCur; cloudCur=new Float32Array(d.buf); cloudRecvWall=performance.now(); } };
+    cloudWorker.onerror=()=>{ try{ cloudWorker.terminate(); }catch(_){}
+      cloudWorker=null; startMainDriver(tles); };
+    cloudWorker.postMessage({ type:'load', tles: tles.map(t=>({l1:t.l1,l2:t.l2})) });
+    setInterval(()=>{ if(cloudWorker) cloudWorker.postMessage({type:'tick', t:simNow()}); }, CLOUD_TICK_MS);
+  }catch(_){ startMainDriver(tles); }
+}
+function startMainDriver(tles){
+  const recs=tles.map(t=>{ try{ return satellite.twoline2satrec(t.l1,t.l2); }catch(_){ return null; } });
+  setInterval(()=>{
+    const date=new Date(simNow()), n=recs.length, buf=new Float32Array(n*3);
+    for(let i=0;i<n;i++){ const r=recs[i];
+      if(!r){ buf[i*3]=NaN; continue; }
+      let pv=null; try{ pv=satellite.propagate(r,date); }catch(_){ }
+      const p=pv&&pv.position; if(!p){ buf[i*3]=NaN; continue; }
+      buf[i*3]=p.x/EARTH_KM; buf[i*3+1]=p.z/EARTH_KM; buf[i*3+2]=-p.y/EARTH_KM; }
+    cloudPrev=cloudCur; cloudCur=buf; cloudRecvWall=performance.now();
+  }, CLOUD_TICK_MS);
+}
+
+// Per-frame: linearly interpolate between the last two worker samples and apply
+// the altitude morph. (SGP4 — the costly part — happens off-thread at ~8 Hz.)
+function updateCloud(){
+  if(!cloud || !cloudCur) return;
+  const arr=cloud.geometry.attributes.position.array, cur=cloudCur, prev=cloudPrev;
+  const alpha = prev ? Math.min(1,(performance.now()-cloudRecvWall)/CLOUD_TICK_MS) : 1;
+  const doMorph = morph>1e-4;
+  for(let i=0;i<arr.length;i+=3){
+    let x=cur[i], y=cur[i+1], z=cur[i+2];
+    if(prev){ x=prev[i]+(x-prev[i])*alpha; y=prev[i+1]+(y-prev[i+1])*alpha; z=prev[i+2]+(z-prev[i+2])*alpha; }
+    if(x!==x){ arr[i]=arr[i+1]=arr[i+2]=0; continue; }   // NaN = decayed/invalid -> hide at origin
+    if(doMorph){ const r=Math.hypot(x,y,z); if(r){ const s=displayRadius(r)/r; x*=s; y*=s; z*=s; } }
+    arr[i]=x; arr[i+1]=y; arr[i+2]=z;
+  }
+  cloud.geometry.attributes.position.needsUpdate=true;
+}
+
+// Identify a clicked cloud point: live altitude + speed straight from the buffers.
+function describeCloud(idx){
+  const m=cloudMeta[idx]; if(!m) return null;
+  let altMi=0, mph=0;
+  if(cloudCur){
+    const x=cloudCur[idx*3], y=cloudCur[idx*3+1], z=cloudCur[idx*3+2];
+    const r=Math.hypot(x,y,z); altMi=(r-1)*EARTH_MI;
+    if(cloudPrev){
+      const dx=x-cloudPrev[idx*3], dy=y-cloudPrev[idx*3+1], dz=z-cloudPrev[idx*3+2];
+      const simDt=(CLOUD_TICK_MS/1000)*Math.max(1e-6,speed);   // sim seconds between samples
+      mph=Math.hypot(dx,dy,dz)*EARTH_MI/simDt*3600;
+    }
+  }
+  return { tag:m.tag, name:m.name+(m.id?(' · NORAD '+m.id):''),
+    text:'Altitude '+fmt(Math.max(0,altMi))+' mi'+(mph?(' · '+fmt(mph)+' mph'):'')+'. Live SGP4 propagation.' };
 }
 
 let liveReady=false;
 async function loadSatellites(){
   document.getElementById('loadMsg').textContent='Fetching live orbital data…';
-  try {
-    const [iss, gps, starlink] = await Promise.all([
-      fetchById(25544),
-      fetchSearch('navstar', 1),
-      fetchSearch('starlink', 6)
-    ]);
 
-    groups.iss = { satrecs:iss, beacon: makeBeacon(0x9bf0ff, { tag:'Low Earth Orbit', name:'ISS — ~250 mi',
+  // Dedicated ISS (independent of the bulk cloud)
+  try{
+    const iss=await fetchById(25544);
+    groups.iss={ satrecs:iss, beacon: makeBeacon(0x9bf0ff, { tag:'Low Earth Orbit', name:'ISS — ~250 mi',
       text:'The International Space Station, tracked live. It orbits ~250 mi up at 17,500 mph, circling Earth every ~92 minutes.' }) };
     if(iss[0]) issTrail(iss[0]);
+  }catch(_){ /* ISS optional — the cloud may still load */ }
 
-    groups.gps = { satrecs:gps, points: makeCloud(gps.length, 0xc6f0a8, 0.03),
-      beacon: makeBeacon(0xc6f0a8, { tag:'Medium Earth Orbit', name:'GPS — ~12,550 mi',
-      text:`Live GPS constellation (${gps.length} satellites tracked). Each orbits twice a day; signal delay and relativistic time dilation must be corrected for your position fix.` }) };
+  // Bulk constellations -> one worker-driven cloud
+  const results=await Promise.all(SAT_GROUPS.map(loadGroup));
+  let snapshot=false, anyLive=false;
+  const tles=[];
+  results.forEach((res,gi)=>{
+    const g=SAT_GROUPS[gi];
+    if(res.src==='snapshot') snapshot=true; if(res.src==='live') anyLive=true;
+    for(const rec of res.recs){
+      if(rec.id===25544) continue;            // ISS handled by the dedicated beacon
+      tles.push({ l1:rec.l1, l2:rec.l2, color:g.color, size:g.size });
+      cloudMeta.push({ name:rec.name||g.short, id:rec.id, tag:g.tag, short:g.short });
+    }
+  });
+  if(tles.length){ buildCloud(tles); startCloudDriver(tles); liveReady=true; }
 
-    groups.starlink = { satrecs:starlink, points: makeCloud(starlink.length, 0xbfe3ff, 0.02),
-      beacon: makeBeacon(0xffffff, { tag:'Low Earth Orbit', name:'Starlink — ~340 mi',
-      text:`Live sample of ${starlink.length} of ~12,000 Starlink satellites at ~340 mi. Low altitude means low latency (~25 ms) but each covers a small area — hence the huge constellation.` }) };
-
-    const total = iss.length + gps.length + starlink.length;
-    document.getElementById('countVal').textContent = total.toLocaleString() + ' sats (live)';
-    document.getElementById('statusText').textContent = 'Live orbital data';
-    liveReady = true;
-  } catch(e){
+  const total=(groups.iss?1:0)+tles.length;
+  if(total===0){
     document.getElementById('status').classList.add('warn');
-    document.getElementById('statusText').textContent = 'Live data unavailable — showing representative orbits';
-    document.getElementById('countVal').textContent = 'representative';
+    document.getElementById('statusText').textContent='Live data unavailable — showing representative orbits';
+    document.getElementById('countVal').textContent='representative';
     fallbackShells();
+    return;
   }
+  document.getElementById('countVal').textContent=total.toLocaleString()+' sats'+(snapshot?' (snapshot)':' (live)');
+  document.getElementById('statusText').textContent= snapshot ? 'Live · daily snapshot + SGP4'
+    : (anyLive ? 'Live orbital data' : 'Live · ISS tracking');
 }
+let fallbackCloud=null, fallbackBase=null;
 function fallbackShells(){
   ring(alt(250),51.6,0x66e0ff,0.5);
   const sl=makeCloud(900,0xbfe3ff,0.018), pos=sl.geometry.attributes.position.array;
   for(let i=0;i<900;i++){ const lon=Math.random()*Math.PI*2,lat=(Math.random()*2-1)*0.92,r=alt(340);
     pos[i*3]=r*Math.cos(lat)*Math.cos(lon); pos[i*3+1]=r*Math.sin(lat); pos[i*3+2]=r*Math.cos(lat)*Math.sin(lon); }
   sl.geometry.attributes.position.needsUpdate=true;
+  fallbackCloud=sl; fallbackBase=Float32Array.from(pos);   // remapped under the altitude morph
+}
+
+// Re-scale every static / loop object to the current morph. Cheap (a handful of
+// objects) and only invoked while the morph is animating; live point clouds are
+// remapped inline in updateGroup since their positions are recomputed each frame.
+function applyMorph(){
+  for(const r of ringScalables) r.obj.scale.setScalar(displayRadius(r.trueR)/r.trueR);
+  geoBeacon.position.set(displayRadius(geoBeaconTrueR),0,0);
+  moon.position.copy(moonDir).multiplyScalar(displayRadius(moonTrueR));
+  if(fallbackCloud){
+    const pos=fallbackCloud.geometry.attributes.position.array;
+    for(let i=0;i<fallbackBase.length;i+=3){
+      const x=fallbackBase[i],y=fallbackBase[i+1],z=fallbackBase[i+2];
+      const r=Math.hypot(x,y,z); if(!r){ pos[i]=pos[i+1]=pos[i+2]=0; continue; }
+      const s=displayRadius(r)/r; pos[i]=x*s; pos[i+1]=y*s; pos[i+2]=z*s;
+    }
+    fallbackCloud.geometry.attributes.position.needsUpdate=true;
+  }
 }
 
 // ---------- Picking ----------
 const ray=new THREE.Raycaster(); ray.params.Points.threshold=0.03;
 const ndc=new THREE.Vector2(); const infoEl=document.getElementById('info');
+function showInfo(d){
+  document.getElementById('infoTag').textContent=d.tag||'';
+  document.getElementById('infoName').textContent=d.name||'';
+  document.getElementById('infoText').textContent=d.text||'';
+  infoEl.classList.add('show');
+}
 canvas.addEventListener('click', e=>{
   ndc.x=(e.clientX/innerWidth)*2-1; ndc.y=-(e.clientY/innerHeight)*2+1;
   ray.setFromCamera(ndc,camera);
-  const hit=ray.intersectObjects(pickables,false)[0];
-  if(hit && hit.object.userData.name){
-    const d=hit.object.userData;
-    document.getElementById('infoTag').textContent=d.tag;
-    document.getElementById('infoName').textContent=d.name;
-    document.getElementById('infoText').textContent=d.text;
-    infoEl.classList.add('show');
+  const meshHit=ray.intersectObjects(pickables,false)[0];
+  let cloudHit=null;
+  if(cloud){ ray.params.Points.threshold=Math.max(0.012, camera.position.length()*0.004);
+    cloudHit=ray.intersectObject(cloud,false)[0]; }
+  // Pick whichever is nearer the camera (a satellite point or a labelled body).
+  if(meshHit && (!cloudHit || meshHit.distance<=cloudHit.distance) && meshHit.object.userData.name){
+    showInfo(meshHit.object.userData);
+  } else if(cloudHit){
+    const d=describeCloud(cloudHit.index); if(d) showInfo(d); else infoEl.classList.remove('show');
   } else infoEl.classList.remove('show');
 });
 
@@ -450,8 +679,27 @@ const MIND=1.06, MAXD=150;
 let targetDist = THREE.MathUtils.clamp(camera.position.length(), MIND, MAXD);
 const setTarget = d => { targetDist = THREE.MathUtils.clamp(d, MIND, MAXD); };
 
+// Fly-to presets frame each shell in whichever scale mode is active: convert the
+// shell's true altitude through the (target-state) remap, then stand off by a factor.
 document.querySelectorAll('#nav button').forEach(b=>
-  b.addEventListener('click', ()=> setTarget(parseFloat(b.dataset.dist))));
+  b.addEventListener('click', ()=>{
+    const shellMi=parseFloat(b.dataset.shellmi);
+    if(!shellMi){ setTarget(1.28); return; }      // Surface
+    const standoff=parseFloat(b.dataset.standoff)||1.5;
+    setTarget(displayRadiusAt(alt(shellMi), morphTarget) * standoff);
+  }));
+
+// Scale toggle — morph between true and exaggerated, riding the camera out with
+// the shells so it keeps framing the same true altitude.
+const scaleBtn=document.getElementById('scaleBtn');
+scaleBtn.addEventListener('click', ()=>{
+  const camTrue=trueFromDisplay(targetDist);     // physical radius the camera is framing now
+  morphTarget = morphTarget ? 0 : 1;
+  morphActive = true;
+  scaleBtn.textContent = morphTarget ? 'Scale · Exaggerated' : 'Scale · True';
+  scaleBtn.classList.toggle('active', !!morphTarget);
+  setTarget(displayRadiusAt(camTrue, morphTarget));
+});
 
 // Mouse / trackpad wheel — multiplicative so it feels even at every scale
 canvas.addEventListener('wheel', e=>{
@@ -496,6 +744,7 @@ function updateGroup(g, date){
     const pv=satellite.propagate(g.satrecs[i], date);
     if(!pv || !pv.position){ if(arr){arr[i*3]=arr[i*3+1]=arr[i*3+2]=0;} continue; }
     eciToScene(pv.position,_p);
+    if(morph>1e-4) _p.setLength(displayRadius(_p.length()));   // lift to exaggerated shell
     if(arr){ arr[i*3]=_p.x; arr[i*3+1]=_p.y; arr[i*3+2]=_p.z; }
     if(i===0 && g.beacon) g.beacon.position.copy(_p);
   }
@@ -520,9 +769,16 @@ function tick(now){
   const date=new Date(simNow());
   const gmst=satellite.gstime(date);
   earthGroup.rotation.y=gmst; clouds.rotation.y=now*0.000004;
-  if(liveReady){ updateGroup(groups.iss,date); updateGroup(groups.gps,date); updateGroup(groups.starlink,date); }
+  // Ease the altitude morph and re-scale the static shells while it moves.
+  if(morphActive){
+    morph += (morphTarget-morph)*(1-Math.exp(-dt*3.5));
+    if(Math.abs(morphTarget-morph)<1e-4){ morph=morphTarget; morphActive=false; }
+    applyMorph();
+  }
+  if(groups.iss) updateGroup(groups.iss,date);
+  updateCloud();
   applyZoom(dt); controls.update();
-  const mi=(camera.position.length()-1)*EARTH_MI;
+  const mi=(trueFromDisplay(camera.position.length())-1)*EARTH_MI;   // HUD always reports true altitude
   altVal.textContent=fmt(Math.max(0,mi))+' mi'; regionVal.textContent=region(Math.max(0,mi));
   timeVal.textContent=date.toISOString().substr(11,8);
   renderer.render(scene,camera);
@@ -536,6 +792,7 @@ requestAnimationFrame(tick);
 addEventListener('resize',()=>{
   camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(innerWidth,innerHeight);
+  if(cloudViewH) cloudViewH.value = innerHeight*Math.min(devicePixelRatio,2)*0.5;
 });
 </script>
 
