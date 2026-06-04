@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.1">
+<meta name="app-rev" content="3.2">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -381,7 +381,7 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;   // cinematic highlight rol
 renderer.toneMappingExposure = 1.12;
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.002, 4000);
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.01, 1600);   // tight range -> reliable depth occlusion (Earth hides far-side objects)
 camera.position.set(0, 0.5, 2.6);
 
 const controls = new OrbitControls(camera, canvas);
@@ -852,6 +852,7 @@ function planetByName(name){ return planets.find(p=>p.def.name===name); }
 // (see loadRealStars), so they line up with the real stars and drift correctly
 // behind the spinning Earth. Each layer is an independently toggled group.
 const SKY_R = STAR_R;
+const skyLabels=[];   // all celestial-sphere CSS2D labels — hidden when behind the Earth
 function raDecVec(raDeg, decDeg, R){
   const a=raDeg*PL_RAD, d=decDeg*PL_RAD, cd=Math.cos(d);
   return new THREE.Vector3(cd*Math.cos(a)*R, Math.sin(d)*R, -cd*Math.sin(a)*R);
@@ -913,7 +914,7 @@ const CSTAR_BASE=4.2, CSTAR_HI=14;
     c._cen=cen;
     const el=document.createElement('div'); el.className='const-label'; el.textContent=c.name;
     el.addEventListener('click', e=>{ e.stopPropagation(); selectConstellation(c); });
-    const lbl=new CSS2DObject(el); lbl.position.copy(cen); constGroup.add(lbl);
+    const lbl=new CSS2DObject(el); lbl.position.copy(cen); constGroup.add(lbl); skyLabels.push(lbl);
   }
   const g=new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(verts,3));
   constGroup.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color:0x6fb6ff, transparent:true, opacity:0.32 })));
@@ -975,7 +976,7 @@ const showerItems=[];
     const v=raDecVec(s.ra,s.dec,SKY_R*0.99); pos.push(v.x,v.y,v.z);
     const el=document.createElement('div'); el.className='shower-label'; el.textContent=s.name;
     el.addEventListener('click', e=>{ e.stopPropagation(); selectShower(s); });
-    const lbl=new CSS2DObject(el); lbl.position.copy(v); showerGroup.add(lbl);
+    const lbl=new CSS2DObject(el); lbl.position.copy(v); showerGroup.add(lbl); skyLabels.push(lbl);
     showerItems.push({ s, el, dir:v.clone().normalize() });
   }
   const g=new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
@@ -1037,7 +1038,7 @@ const cometItems=[]; let cometPosAttr=null;
     const el=document.createElement('div'); el.className='comet-label'; el.textContent='☄ '+c.name.split('/')[0];
     const item={ c, el, lbl:null };
     el.addEventListener('click', e=>{ e.stopPropagation(); selectComet(c); });
-    const lbl=new CSS2DObject(el); cometGroup.add(lbl); item.lbl=lbl;
+    const lbl=new CSS2DObject(el); cometGroup.add(lbl); item.lbl=lbl; skyLabels.push(lbl);
     cometItems.push(item);
   });
   const g=new THREE.BufferGeometry(); cometPosAttr=new THREE.BufferAttribute(pos,3); g.setAttribute('position', cometPosAttr);
@@ -1076,6 +1077,22 @@ function skywatchSearch(ql){
   return null;
 }
 
+// True when the solid Earth (radius 1 at the origin) sits between the camera and
+// a label's world position — used to hide labels that are "behind" the globe so
+// you have to rotate around to see them (DOM labels don't depth-test on their own).
+const _occP=new THREE.Vector3();
+function occludedByEarth(obj){
+  obj.getWorldPosition(_occP);
+  const ex=camera.position.x, ey=camera.position.y, ez=camera.position.z;
+  const fx=-ex, fy=-ey, fz=-ez;                       // camera -> Earth centre
+  let dx=_occP.x-ex, dy=_occP.y-ey, dz=_occP.z-ez;
+  const dLen=Math.hypot(dx,dy,dz)||1; dx/=dLen; dy/=dLen; dz/=dLen;
+  const tca=fx*dx+fy*dy+fz*dz; if(tca<=0) return false;
+  const d2=(fx*fx+fy*fy+fz*fz)-tca*tca, R=1.0;
+  if(d2>R*R) return false;
+  const thit=tca-Math.sqrt(R*R-d2);
+  return thit>0 && thit<dLen;                          // globe is in front of the label
+}
 // Glide the camera out to the celestial sphere and (optionally) face a sky point.
 // Overlays sit at SKY_R; the camera looks toward the origin, so to centre a sky
 // direction D we sit on the opposite side (-D) and pull out near max distance.
@@ -1668,7 +1685,9 @@ function tick(now){
   // Show planet labels only when zoomed out toward them; hide a planet's own
   // label while it's the selected body (the selection label already names it).
   const plLabels = camera.position.length()>28;
-  for(const p of planets) p.label.visible = plLabels && !(selection && selection.kind==='obj' && selection.obj===p.mesh);
+  for(const p of planets) p.label.visible = plLabels && !(selection && selection.kind==='obj' && selection.obj===p.mesh) && !occludedByEarth(p.label);
+  moonLabel.visible = !occludedByEarth(moonLabel);
+  for(const lbl of skyLabels){ if(lbl.parent && lbl.parent.visible) lbl.visible = !occludedByEarth(lbl); }   // hide sky labels behind the globe
   updateSelection();
   applyZoom(dt); controls.update();
   const mi=(trueFromDisplay(camera.position.length())-1)*EARTH_MI;   // HUD always reports true altitude
