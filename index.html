@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.2">
+<meta name="app-rev" content="3.3">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -343,6 +343,15 @@ import * as satellite from 'satellite.js';
 
 const EARTH_MI = 3959;          // Earth radius in miles (for the altitude HUD)
 const EARTH_KM = 6371;          // Earth radius in km  (scene unit = 1 Earth radius)
+// Light-travel time: how long light takes to cross a distance, in human units.
+const AU_KM = 149597870.7, C_KMS = 299792.458, MI_KM = 1.609344;
+function lightTime(sec){
+  if(sec < 1)      return Math.round(sec*1000)+' milliseconds';
+  if(sec < 90)     return sec.toFixed(1)+' seconds';
+  if(sec < 5400)   return (sec/60).toFixed(1)+' minutes';
+  if(sec < 172800) return (sec/3600).toFixed(1)+' hours';
+  return (sec/86400).toFixed(1)+' days';
+}
 const alt = mi => 1 + mi / EARTH_MI;
 const TEX = 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r160/examples/textures/planets/';
 const API = 'https://tle.ivanstanojevic.me/api/tle';
@@ -730,7 +739,8 @@ scene.add(moon); pickables.push(moon);
 const moonLabelEl=document.createElement('div'); moonLabelEl.className='body-label'; moonLabelEl.textContent='The Moon';
 const moonLabel=new CSS2DObject(moonLabelEl); moonLabel.position.set(0,0.36,0); moon.add(moonLabel);
 moon.userData={ tag:'Cislunar space', name:'The Moon — 238,900 mi',
-  text:'Earth\u2019s natural satellite, ~60 Earth-radii away — about 960× farther than the ISS.' };
+  text:'Earth\u2019s natural satellite, ~60 Earth-radii away — about 960× farther than the ISS. '
+    +'Its light reaches Earth in '+lightTime(238900*MI_KM/C_KMS)+' — so you always see the Moon as it was that long ago.' };
 
 // ---------- GEO (representative, geostationary so ~static) ----------
 function ring(radius, inclDeg, color, op){
@@ -840,7 +850,8 @@ function updatePlanets(date){
     p.mesh.position.copy(p.dir).multiplyScalar(p.sceneR);
     const au=p.distAU.toFixed(p.distAU<10?2:1);
     p.mesh.userData.name=p.def.name+' — '+au+' AU from Earth';
-    p.mesh.userData.text=p.def.fact+' Currently '+au+' AU away.';
+    p.mesh.userData.text=p.def.fact+' Currently '+au+' AU away — its light takes '
+      +lightTime(p.distAU*AU_KM/C_KMS)+' to reach Earth, so this is how it looked that long ago.';
     const small=p.btn && p.btn.querySelector('small'); if(small) small.textContent=au+' AU';
   }
 }
