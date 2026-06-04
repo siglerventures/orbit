@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.10">
+<meta name="app-rev" content="3.11">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -1832,7 +1832,27 @@ function renderPasses(){
     passList.appendChild(row);
   }
 }
-function safeRenderPasses(){ try{ renderPasses(); }catch(e){ passStat.textContent='Couldn’t compute passes ('+(e&&e.message||'error')+').'; passList.innerHTML=''; } }
+function safeRenderPasses(note){ try{ renderPasses(); if(note) passStat.insertAdjacentHTML('beforeend', ' <span class="pdim">'+note+'</span>'); }
+  catch(e){ passStat.textContent='Couldn’t compute passes ('+(e&&e.message||'error')+').'; passList.innerHTML=''; } }
+// Approximate location from the visitor's IP (CORS-friendly services) — desktop
+// fallback when the browser's geolocation is blocked, off, or never resolves.
+async function ipLocate(){
+  for(const u of ['https://get.geojs.io/v1/ip/geo.json','https://ipapi.co/json/','https://ipwho.is/']){
+    try{
+      const r=await fetch(u); if(!r.ok) continue; const j=await r.json();
+      const la=parseFloat(j.latitude), lo=parseFloat(j.longitude);
+      if(!isNaN(la)&&!isNaN(lo)) return { lat:la, lon:lo, city:(j.city||j.region||'').toString() };
+    }catch(_){}
+  }
+  return null;
+}
+function useLatLon(la, lo){ observerGd={ longitude:lo*Math.PI/180, latitude:la*Math.PI/180, height:0.1 }; }
+async function fallbackLocate(why){
+  passStat.textContent='Trying approximate location…'; passList.innerHTML='';
+  const loc=await ipLocate();
+  if(loc){ useLatLon(loc.lat, loc.lon); safeRenderPasses('· approx'+(loc.city?' · '+loc.city:'')); }
+  else offerManualLocation(why);
+}
 function offerManualLocation(prefix){
   passStat.innerHTML=prefix+' <a href="#" id="manLoc" style="color:var(--accent)">Enter location manually</a>.';
   passList.innerHTML='';
@@ -1841,7 +1861,7 @@ function offerManualLocation(prefix){
     const s=prompt('Enter your latitude, longitude\n(e.g. 37.77, -122.42):'); if(!s) return;
     const p=s.split(/[, ]+/).filter(Boolean), la=parseFloat(p[0]), lo=parseFloat(p[1]);
     if(isNaN(la)||isNaN(lo)){ offerManualLocation('Couldn’t read that.'); return; }
-    observerGd={ longitude:lo*Math.PI/180, latitude:la*Math.PI/180, height:0.1 }; safeRenderPasses();
+    useLatLon(la, lo); safeRenderPasses();
   });
 }
 passBtn.addEventListener('click', ()=>{
@@ -1849,12 +1869,12 @@ passBtn.addEventListener('click', ()=>{
   explorePanel.classList.remove('show'); passPanel.classList.add('show');
   if(!(groups.iss && groups.iss.satrecs[0])){ passStat.textContent='ISS data isn’t loaded yet — try again in a moment.'; passList.innerHTML=''; return; }
   if(observerGd){ safeRenderPasses(); return; }
-  if(!navigator.geolocation){ offerManualLocation('Geolocation isn’t available here —'); return; }
+  if(!navigator.geolocation){ fallbackLocate('Geolocation isn’t available here —'); return; }
   passStat.textContent='Locating you…'; passList.innerHTML='';
   navigator.geolocation.getCurrentPosition(
-    pos=>{ observerGd={ longitude:pos.coords.longitude*Math.PI/180, latitude:pos.coords.latitude*Math.PI/180, height:0.1 }; safeRenderPasses(); },
-    err=>{ const why = err && err.code===1 ? 'Location permission denied —' : (err && err.code===3 ? 'Location timed out —' : 'Couldn’t get your location —'); offerManualLocation(why); },
-    { enableHighAccuracy:false, timeout:12000, maximumAge:600000 });   // don't hang forever
+    pos=>{ useLatLon(pos.coords.latitude, pos.coords.longitude); safeRenderPasses(); },
+    err=>{ const why = err && err.code===1 ? 'Location permission denied —' : (err && err.code===3 ? 'Location timed out —' : 'Couldn’t get your location —'); fallbackLocate(why); },
+    { enableHighAccuracy:false, timeout:8000, maximumAge:600000 });   // 8s, then fall back to IP/manual
 });
 
 // ---------- Update satellites ----------
