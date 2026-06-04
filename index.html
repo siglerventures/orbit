@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.8">
+<meta name="app-rev" content="3.9">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -67,8 +67,8 @@ document.addEventListener('DOMContentLoaded', function(){
   #hud .row span:first-child { color:var(--muted); }
   #hud .alt { font-size:22px; font-weight:600; margin:2px 0 8px; letter-spacing:0.4px; }
   #hud .region { color:var(--accent); font-weight:500; }
-  #speed { display:flex; gap:6px; margin-top:10px; }
-  #speed button { flex:1; background:rgba(20,30,48,0.6); color:var(--muted); border:1px solid rgba(120,160,210,0.22);
+  #speed { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+  #speed button { flex:1 1 28%; background:rgba(20,30,48,0.6); color:var(--muted); border:1px solid rgba(120,160,210,0.22);
     border-radius:8px; padding:5px 0; font-size:11px; cursor:pointer; }
   #speed button.active { color:var(--fg); border-color:var(--accent); background:rgba(40,70,120,0.6); }
   #scaleBtn { width:100%; margin-top:8px; background:rgba(20,30,48,0.6); color:var(--muted);
@@ -371,6 +371,8 @@ document.addEventListener('DOMContentLoaded', function(){
       <button data-mult="1" class="active">Live</button>
       <button data-mult="60">60×</button>
       <button data-mult="600">600×</button>
+      <button data-mult="3600" title="1 hour per second — watch the Moon and planets drift">1h/s</button>
+      <button data-mult="86400" title="1 day per second — Moon orbits in ~27s, planets visibly move">1d/s</button>
     </div>
     <button id="scaleBtn" title="Spread the orbital shells apart so LEO, MEO and GEO are individually navigable. The altitude readout always stays true.">Scale · True</button>
   </div>
@@ -1897,7 +1899,7 @@ function tick(now){
   }
   if(groups.iss) updateGroup(groups.iss,date);
   updateCloud();
-  if(now-lastPlanetUpd>2500){ updatePlanets(date); moonDir.copy(moonSceneDir(date)); lastPlanetUpd=now; }   // planets + Moon drift slowly
+  if(now-lastPlanetUpd > (speed>=600?0:2500)){ updatePlanets(date); moonDir.copy(moonSceneDir(date)); lastPlanetUpd=now; }   // planets + Moon (refresh every frame when sped up so motion is smooth)
   if(now-lastSkyUpd>2000){ updateShowers(); updateComets(); lastSkyUpd=now; }   // refresh active showers + comet positions
   // Show planet labels only when zoomed out toward them; hide a planet's own
   // label while it's the selected body (the selection label already names it).
