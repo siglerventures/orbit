@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="1.4">
+<meta name="app-rev" content="1.5">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -469,36 +469,92 @@ const atmosphere = new THREE.Mesh(new THREE.SphereGeometry(1.025, 64, 64),
     blending:THREE.AdditiveBlending, side:THREE.BackSide, transparent:true, depthWrite:false }));
 scene.add(atmosphere);
 
-// ---------- Stars ----------
+// ---------- Stars (inertial sky: real HYG-class catalog, procedural fallback) ----------
 function starTexture(){
   const c=document.createElement('canvas'); c.width=c.height=64; const g=c.getContext('2d');
   const grd=g.createRadialGradient(32,32,0,32,32,32);
   grd.addColorStop(0,'rgba(255,255,255,1)'); grd.addColorStop(0.3,'rgba(255,255,255,0.8)'); grd.addColorStop(1,'rgba(255,255,255,0)');
   g.fillStyle=grd; g.fillRect(0,0,64,64); return new THREE.CanvasTexture(c);
 }
-(function stars(){
-  const N=7000,R=900,pos=new Float32Array(N*3),col=new Float32Array(N*3),siz=new Float32Array(N);
-  const tint=[[1,1,1],[0.75,0.83,1],[1,0.95,0.85],[1,0.82,0.7]];
-  for(let i=0;i<N;i++){
-    let u=Math.random()*2-1,th=Math.random()*Math.PI*2; if(Math.random()<0.22)u*=0.16;
-    const s=Math.sqrt(1-u*u); let x=s*Math.cos(th),y=u,z=s*Math.sin(th);
-    const ty=y*0.92-z*0.39,tz=y*0.39+z*0.92;
-    pos[i*3]=x*R;pos[i*3+1]=ty*R;pos[i*3+2]=tz*R;
-    const c=tint[(Math.random()*tint.length)|0],b=0.55+Math.random()*0.45;
-    col[i*3]=c[0]*b;col[i*3+1]=c[1]*b;col[i*3+2]=c[2]*b; siz[i]=1.2+Math.random()*Math.random()*5;
-  }
+const STAR_TEX=starTexture(), STAR_R=900;
+function starPoints(pos,col,siz){
   const g=new THREE.BufferGeometry();
   g.setAttribute('position',new THREE.BufferAttribute(pos,3));
   g.setAttribute('color',new THREE.BufferAttribute(col,3));
   g.setAttribute('size',new THREE.BufferAttribute(siz,1));
-  const m=new THREE.ShaderMaterial({ uniforms:{uTex:{value:starTexture()}},
+  const m=new THREE.ShaderMaterial({ uniforms:{uTex:{value:STAR_TEX}},
     vertexShader:`attribute float size; varying vec3 vC;
       void main(){ vC=color; vec4 mv=modelViewMatrix*vec4(position,1.0); gl_PointSize=size*(300.0/-mv.z); gl_Position=projectionMatrix*mv; }`,
     fragmentShader:`uniform sampler2D uTex; varying vec3 vC;
       void main(){ gl_FragColor=vec4(vC,1.0)*texture2D(uTex,gl_PointCoord); }`,
     transparent:true, vertexColors:true, depthWrite:false, blending:THREE.AdditiveBlending });
-  scene.add(new THREE.Points(g,m));
+  return new THREE.Points(g,m);
+}
+// Real catalogs stop ~mag 6 and don't show the Milky Way — keep a faint haze band.
+(function milkyWay(){
+  const N=2600,R=STAR_R*1.0015,pos=new Float32Array(N*3),col=new Float32Array(N*3),siz=new Float32Array(N);
+  for(let i=0;i<N;i++){
+    const u=(Math.random()*2-1)*0.13,th=Math.random()*Math.PI*2,s=Math.sqrt(1-u*u);
+    const x=s*Math.cos(th),y=u,z=s*Math.sin(th),ty=y*0.92-z*0.39,tz=y*0.39+z*0.92;
+    pos[i*3]=x*R;pos[i*3+1]=ty*R;pos[i*3+2]=tz*R;
+    const b=0.10+Math.random()*0.16; col[i*3]=b*0.92;col[i*3+1]=b*0.96;col[i*3+2]=b; siz[i]=0.8+Math.random()*1.6;
+  }
+  scene.add(starPoints(pos,col,siz));
 })();
+
+let starField=null;
+function buildFallbackStars(){
+  const N=5000,pos=new Float32Array(N*3),col=new Float32Array(N*3),siz=new Float32Array(N);
+  const tint=[[1,1,1],[0.75,0.83,1],[1,0.95,0.85],[1,0.82,0.7]];
+  for(let i=0;i<N;i++){
+    const u=Math.random()*2-1,th=Math.random()*Math.PI*2,s=Math.sqrt(1-u*u);
+    pos[i*3]=s*Math.cos(th)*STAR_R;pos[i*3+1]=u*STAR_R;pos[i*3+2]=s*Math.sin(th)*STAR_R;
+    const c=tint[(Math.random()*tint.length)|0],b=0.5+Math.random()*0.45;
+    col[i*3]=c[0]*b;col[i*3+1]=c[1]*b;col[i*3+2]=c[2]*b; siz[i]=1.0+Math.random()*Math.random()*4.5;
+  }
+  starField=starPoints(pos,col,siz); scene.add(starField);
+}
+// B–V colour index -> approximate stellar RGB.
+function bvToRGB(bv){
+  if(bv==null||isNaN(bv)) bv=0.6; bv=Math.max(-0.4,Math.min(2.0,bv));
+  let r=1,g=1,b=1,t;
+  if(bv<0.0){ t=(bv+0.4)/0.4; r=0.61+0.20*t; g=0.70+0.21*t; b=1.0; }
+  else if(bv<0.4){ t=bv/0.4; r=0.83+0.17*t; g=0.87+0.11*t; b=1.0; }
+  else if(bv<1.6){ t=(bv-0.4)/1.2; r=1.0; g=0.98-0.30*t; b=1.0-0.55*t; }
+  else { t=(bv-1.6)/0.4; r=1.0; g=0.68-0.30*t; b=0.45-0.30*t; }
+  return [Math.max(0,r),Math.max(0,g),Math.max(0,b)];
+}
+// Load a real bright-star catalog (same-origin snapshot first, then the
+// CORS-friendly d3-celestial set on jsDelivr). Placed inertially by RA/Dec.
+async function loadRealStars(){
+  const sources=['data/stars.json','https://cdn.jsdelivr.net/gh/ofrohn/d3-celestial@master/data/stars.6.json'];
+  for(const url of sources){
+    try{
+      const r=await fetch(url); if(!r.ok) continue;
+      const j=await r.json(); const feats=j.features||(Array.isArray(j)?j:null); if(!feats||!feats.length) continue;
+      const P=[],C=[],S=[]; let n=0;
+      for(const f of feats){
+        const g=(f.geometry&&f.geometry.coordinates)||f.coordinates; const p=f.properties||f;
+        if(!g) continue;
+        const ra=+g[0], dec=+g[1], mag=(p.mag!=null?+p.mag:+f.mag);
+        if(isNaN(ra)||isNaN(dec)||isNaN(mag)||mag>6.5) continue;
+        const a=ra*Math.PI/180, d=dec*Math.PI/180, cd=Math.cos(d);
+        P.push(cd*Math.cos(a)*STAR_R, Math.sin(d)*STAR_R, -cd*Math.sin(a)*STAR_R);   // ECI->scene
+        const bv=(p.bv!=null?+p.bv:(f.bv!=null?+f.bv:0.6)), rgb=bvToRGB(bv);
+        const bright=Math.max(0.2,Math.min(1,1.12-mag*0.13));
+        C.push(rgb[0]*bright,rgb[1]*bright,rgb[2]*bright);
+        S.push(Math.max(0.8, 5.4-mag*0.72)); n++;
+      }
+      if(n<200) continue;
+      const real=starPoints(new Float32Array(P),new Float32Array(C),new Float32Array(S));
+      if(starField){ scene.remove(starField); starField.geometry.dispose(); starField.material.dispose(); }
+      scene.add(real); starField=real;
+      return true;
+    }catch(_){}
+  }
+  return false;
+}
+buildFallbackStars(); loadRealStars();
 
 const pickables = [];
 
