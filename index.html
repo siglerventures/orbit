@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="2.3">
+<meta name="app-rev" content="2.4">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -263,8 +263,8 @@ document.addEventListener('DOMContentLoaded', function(){
   <button id="exploreBtn" title="Explore live highlights" aria-label="Explore live highlights">✨</button>
   <div id="explore" class="panel">
     <div class="exhead">Live highlights — click to fly</div>
-    <button class="exrow" data-ex="low"><span class="exk">⬇ Closest to Earth</span><span class="exv" id="ex-low">—</span></button>
-    <button class="exrow" data-ex="high"><span class="exk">⬆ Farthest out</span><span class="exv" id="ex-high">—</span></button>
+    <button class="exrow" data-ex="low"><span class="exk">🛰️ Closest to Earth</span><span class="exv" id="ex-low">—</span></button>
+    <button class="exrow" data-ex="high"><span class="exk">🛰️ Farthest out</span><span class="exv" id="ex-high">—</span></button>
     <button class="exrow" data-ex="fast"><span class="exk">⚡ Fastest</span><span class="exv" id="ex-fast">—</span></button>
     <button class="exrow" data-ex="rand"><span class="exk">🎲 Random satellite</span><span class="exv">surprise me</span></button>
   </div>
@@ -276,7 +276,7 @@ document.addEventListener('DOMContentLoaded', function(){
     <button data-shellmi="12550" data-standoff="2.16" data-track="gps" data-tip="GPS (NAVSTAR) — US navigation satellites in medium Earth orbit at ~12,550 mi.">GPS <small>12,550 mi</small></button>
     <button data-shellmi="22236" data-standoff="2.12" data-track="geo" data-tip="Geostationary belt at 22,236 mi — satellites here hover over a fixed point (TV, weather, comms).">GEO <small>22,236 mi</small></button>
     <button data-shellmi="238900" data-standoff="1.55" data-track="all" data-orient="moon" data-tip="The Moon — Earth's natural satellite, ~238,900 mi away (about 960× farther than the ISS).">Moon <small>238,900 mi</small></button>
-    <div class="navsep">Planets</div>
+    <div class="navsep">🪐 Planets</div>
     <button class="planet" data-planet="Mercury" data-tip="Mercury — the smallest planet and closest to the Sun.">Mercury <small>— AU</small></button>
     <button class="planet" data-planet="Venus" data-tip="Venus — the hottest planet, wrapped in a thick CO₂ atmosphere.">Venus <small>— AU</small></button>
     <button class="planet" data-planet="Mars" data-tip="Mars — the Red Planet, home to the tallest volcano in the solar system.">Mars <small>— AU</small></button>
