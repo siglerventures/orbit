@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="2.4">
+<meta name="app-rev" content="2.5">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -460,12 +460,16 @@ function flyToSelection(){
   const trueR = morph>1e-4 ? trueFromDisplay(_selPos.length()) : _selPos.length();
   setTarget(displayRadiusAt(trueR, morphTarget) * 1.6);
 }
-// Enlarge one constellation's dots so it's easy to spot (null clears the boost).
-function focusConstellation(short){
+// Focus a constellation. `isolate` hides every other group (size 0); without it,
+// the group is just enlarged. `short` null clears both (all groups, base size).
+function focusConstellation(short, isolate){
+  isoShort = (short && isolate) ? short : null;
   if(!cloud || !cloudBaseSize) return;
   const arr=cloud.geometry.attributes.size.array;
-  for(let i=0;i<arr.length;i++)
-    arr[i]=cloudBaseSize[i]*((short && cloudMeta[i].short===short)?2.5:1);
+  for(let i=0;i<arr.length;i++){
+    const match = short && cloudMeta[i].short===short;
+    arr[i] = (isoShort && !match) ? 0 : cloudBaseSize[i]*(match?2.5:1);
+  }
   cloud.geometry.attributes.size.needsUpdate=true;
 }
 // Fly to a real member of a constellation — the one most in front of the current
@@ -915,6 +919,7 @@ const SAT_GROUPS = [
 
 let cloud=null;                 // THREE.Points for the whole bulk constellation
 let cloudBaseSize=null;         // base per-point sizes, so a focused group can be enlarged
+let isoShort=null;              // when set, only this constellation is shown (others hidden)
 const cloudMeta=[];             // per-point { name, id, tag, short } for picking
 let cloudWorker=null;
 let cloudPrev=null, cloudCur=null, cloudRecvWall=0;   // double-buffer for interpolation
@@ -969,7 +974,9 @@ function buildCloud(tles){
   const mat=new THREE.ShaderMaterial({
     uniforms:{ uTex:{value:dotTexture()}, uVH:cloudViewH },
     vertexShader:`attribute float size; uniform float uVH; varying vec3 vC;
-      void main(){ vC=color; vec4 mv=modelViewMatrix*vec4(position,1.0);
+      void main(){ vC=color;
+        if(size<=0.0){ gl_PointSize=0.0; gl_Position=vec4(2.0,2.0,2.0,1.0); return; }   // size 0 = filtered out -> clip offscreen
+        vec4 mv=modelViewMatrix*vec4(position,1.0);
         gl_PointSize=clamp(size*uVH/(-mv.z), 1.5, 48.0); gl_Position=projectionMatrix*mv; }`,
     fragmentShader:`uniform sampler2D uTex; varying vec3 vC;
       void main(){ vec4 tx=texture2D(uTex,gl_PointCoord); if(tx.a<0.12) discard; gl_FragColor=vec4(vC, tx.a); }`,
@@ -1146,7 +1153,9 @@ canvas.addEventListener('click', e=>{
   const meshHit=ray.intersectObjects(pickables,false)[0];
   let cloudHit=null;
   if(cloud){ ray.params.Points.threshold=Math.max(0.025, camera.position.length()*0.012);
-    cloudHit=ray.intersectObject(cloud,false)[0]; }
+    cloudHit=ray.intersectObject(cloud,false)[0];
+    if(cloudHit && isoShort && cloudMeta[cloudHit.index].short!==isoShort) cloudHit=null;   // ignore hidden sats
+  }
   // Pick whichever is nearer the camera (a satellite point or a labelled body).
   if(meshHit && (!cloudHit || meshHit.distance<=cloudHit.distance) && meshHit.object.userData.name){
     showInfo(meshHit.object.userData); selection=null;   // labelled body: clear sat selection marker
@@ -1165,7 +1174,8 @@ canvas.addEventListener('pointermove', e=>{
   ray.setFromCamera(ndc,camera);
   let over=ray.intersectObjects(pickables,false).length>0;
   if(!over && cloud){ ray.params.Points.threshold=Math.max(0.025, camera.position.length()*0.012);
-    over=ray.intersectObject(cloud,false).length>0; }
+    const h=ray.intersectObject(cloud,false)[0];
+    over = !!h && (!isoShort || cloudMeta[h.index].short===isoShort); }
   canvas.style.cursor = over ? 'pointer' : '';
 });
 
@@ -1184,10 +1194,12 @@ document.querySelectorAll('#nav button').forEach(b=>
     const shellMi=parseFloat(b.dataset.shellmi);
     const standoff=parseFloat(b.dataset.standoff)||1.5;
     const shortMap={ starlink:'Starlink', gps:'GPS · NAVSTAR', geo:'GEO satellite' };
-    // Constellation presets: enlarge that group and fly to a real member of it.
+    // Constellation presets: isolate that group (hide the rest) + fly to a member.
     if(shortMap[key]){
-      focusConstellation(shortMap[key]);
-      if(flyToConstellation(shortMap[key])) return;       // framed + selected a live one
+      const sh=shortMap[key];
+      if(isoShort===sh){ focusConstellation(null); setTracking('all'); return; }   // click again -> show all
+      focusConstellation(sh, true);
+      if(flyToConstellation(sh)) return;                  // framed + selected a live one
       setTarget(displayRadiusAt(alt(shellMi), morphTarget) * standoff);   // fallback: just stand off
       return;
     }
