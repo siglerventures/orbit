@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.0">
+<meta name="app-rev" content="3.1">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -102,10 +102,11 @@ document.addEventListener('DOMContentLoaded', function(){
   #search input { width:230px; max-width:46vw; background:rgba(20,30,48,0.7); border:1px solid rgba(120,160,210,0.25);
     border-radius:8px; color:var(--fg); font-size:13px; padding:7px 10px; outline:none; }
   #search input:focus { border-color:var(--accent); }
-  #search #searchMsg { font-size:11px; color:var(--amber); min-width:0; white-space:nowrap; }
+  #search #searchMsg { position:absolute; top:calc(100% + 6px); left:50%; transform:translateX(-50%);
+    font-size:11px; color:var(--amber); white-space:nowrap; pointer-events:none; }
 
   /* Home / reset — glassy circular button just left of the search bar. */
-  #homeBtn { position:fixed; z-index:60; top:16px; left:calc(50% - 186px);
+  #homeBtn { position:fixed; z-index:60; top:16px; left:calc(50% - 205px);
     width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center;
     color:var(--accent); cursor:pointer; -webkit-tap-highlight-color:transparent;
     background:radial-gradient(circle at 32% 28%, rgba(78,163,255,0.30), rgba(20,30,48,0.72));
@@ -564,6 +565,8 @@ async function doSearch(qRaw){
     return;
   }
   const ql=q.toLowerCase();
+  // Skywatch objects (constellations, comets, meteor showers) before satellites.
+  if(skywatchSearch(ql)){ searchMsg(''); return; }
   let idx=cloudMeta.findIndex(m=>m.name && m.name.toLowerCase()===ql);
   if(idx<0) idx=cloudMeta.findIndex(m=>m.name && m.name.toLowerCase().includes(ql));
   if(idx>=0){ selectCloud(idx,true); searchMsg(''); return; }
@@ -586,6 +589,11 @@ const specTex = load('earth_specular_2048.jpg');
 const normTex = loader.load(TEX + 'earth_normal_2048.jpg');
 const cloudTex = load('earth_clouds_1024.png');
 const moonTex = load('moon_1024.jpg');
+// Planet/Moon surface maps (loaded off the LoadingManager so they never block
+// startup; applied via callback so a CDN miss just leaves the base colour).
+const PTEX = 'https://cdn.jsdelivr.net/gh/jeromeetienne/threex.planets@master/images/';
+const planetLoader = new THREE.TextureLoader();
+const applyMap = (file, set) => planetLoader.load(PTEX+file, t=>{ t.colorSpace=THREE.SRGBColorSpace; set(t); });
 
 // ---------- Earth (spins with sidereal time) ----------
 const earthGroup = new THREE.Group(); scene.add(earthGroup);
@@ -712,7 +720,9 @@ buildFallbackStars(); loadRealStars();
 const pickables = [];
 
 // ---------- Moon (representative position) ----------
-const moon = new THREE.Mesh(new THREE.SphereGeometry(0.273,48,48), new THREE.MeshPhongMaterial({ map:moonTex }));
+const moonMat = new THREE.MeshPhongMaterial({ map:moonTex, shininess:2 });
+applyMap('moonbump1k.jpg', t=>{ moonMat.bumpMap=t; moonMat.bumpScale=0.006; moonMat.needsUpdate=true; });   // crater relief
+const moon = new THREE.Mesh(new THREE.SphereGeometry(0.273,64,64), moonMat);
 const moonTrueR = alt(238900);
 const moonDir = new THREE.Vector3(0.82, 0.18, -0.54).normalize();
 moon.position.copy(moonDir).multiplyScalar(moonTrueR);
@@ -782,20 +792,33 @@ function planetGeo(name, date){
   return { dir:_plDir, distAU };
 }
 const PLANET_DEFS=[
-  { name:'Mercury', color:0xb9a89a, r:0.9, fact:'The smallest planet and the closest to the Sun.' },
-  { name:'Venus',   color:0xe6cd8a, r:1.5, fact:'The hottest planet, wrapped in a thick CO₂ atmosphere.' },
-  { name:'Mars',    color:0xe2683b, r:1.1, fact:'The Red Planet — home to Olympus Mons, the tallest volcano known.' },
-  { name:'Jupiter', color:0xd9a066, r:3.0, fact:'The largest planet; the Great Red Spot is a storm wider than Earth.' },
-  { name:'Saturn',  color:0xe7d4a0, r:2.6, fact:'The ringed gas giant, famous for its spectacular ring system.' },
-  { name:'Uranus',  color:0x9fe6ea, r:2.0, fact:'An ice giant that rotates almost on its side.' },
-  { name:'Neptune', color:0x5a7cf0, r:2.0, fact:'The windiest planet and the farthest from the Sun.' },
+  { name:'Mercury', color:0xb9a89a, r:0.9, tex:'mercurymap.jpg', fact:'The smallest planet and the closest to the Sun.' },
+  { name:'Venus',   color:0xe6cd8a, r:1.5, tex:'venusmap.jpg',   fact:'The hottest planet, wrapped in a thick CO₂ atmosphere.' },
+  { name:'Mars',    color:0xe2683b, r:1.1, tex:'marsmap1k.jpg',  fact:'The Red Planet — home to Olympus Mons, the tallest volcano known.' },
+  { name:'Jupiter', color:0xd9a066, r:3.0, tex:'jupitermap.jpg', fact:'The largest planet; the Great Red Spot is a storm wider than Earth.' },
+  { name:'Saturn',  color:0xe7d4a0, r:2.6, tex:'saturnmap.jpg',  ring:true, fact:'The ringed gas giant, famous for its spectacular ring system.' },
+  { name:'Uranus',  color:0x9fe6ea, r:2.0, tex:'uranusmap.jpg',  fact:'An ice giant that rotates almost on its side.' },
+  { name:'Neptune', color:0x5a7cf0, r:2.0, tex:'neptunemap.jpg', fact:'The windiest planet and the farthest from the Sun.' },
 ];
 const planets=[];
 const PLANET_BASE=70, PLANET_STEP=5.6;   // compressed scene radii, ordered by true distance
 for(const def of PLANET_DEFS){
-  const m=new THREE.Mesh(new THREE.SphereGeometry(def.r,24,24), new THREE.MeshBasicMaterial({color:def.color}));
+  // Lit, textured sphere; starts as a coloured globe and gets its surface map when
+  // the CDN texture arrives (so a network miss just leaves the flat colour).
+  const mat=new THREE.MeshPhongMaterial({ color:def.color, shininess:4,
+    emissive:new THREE.Color(def.color).multiplyScalar(0.16) });   // dim self-glow so the night side stays visible
+  if(def.tex) applyMap(def.tex, t=>{ mat.map=t; mat.color.set(0xffffff); mat.needsUpdate=true; });
+  const m=new THREE.Mesh(new THREE.SphereGeometry(def.r,48,48), mat);
   m.userData={ tag:'Planet', name:def.name, text:def.fact };
   scene.add(m);
+  if(def.ring){                                  // Saturn's rings (radially-mapped flat annulus)
+    const rg=new THREE.RingGeometry(def.r*1.28, def.r*2.1, 96);
+    const pa=rg.attributes.position, ua=rg.attributes.uv;
+    for(let i=0;i<pa.count;i++){ const x=pa.getX(i), y=pa.getY(i); const t=(Math.hypot(x,y)-def.r*1.28)/(def.r*2.1-def.r*1.28); ua.setXY(i, t, 0.5); }
+    const ringMat=new THREE.MeshBasicMaterial({ color:0xcbb38a, transparent:true, opacity:0.5, side:THREE.DoubleSide, depthWrite:false });
+    applyMap('saturnringcolor.jpg', t=>{ ringMat.map=t; ringMat.color.set(0xffffff); ringMat.opacity=0.92; ringMat.needsUpdate=true; });
+    const ring=new THREE.Mesh(rg, ringMat); ring.rotation.x=THREE.MathUtils.degToRad(74); m.add(ring);
+  }
   // Generous invisible pick sphere so the distant planet is easy to click.
   const hit=new THREE.Mesh(new THREE.SphereGeometry(def.r*2.2,12,12),
     new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false}));
@@ -875,19 +898,41 @@ const CONSTELLATIONS=[
 ];
 const constGroup=new THREE.Group(); constGroup.visible=false; scene.add(constGroup);
 function constInfo(c){ return { tag:'Constellation', name:c.name, text:c.fact }; }
+// Member-star layer: every constellation's stars as points; the selected one is
+// boosted brighter/bigger so its shape stands out.
+let constStarSize=null, constStarCol=null, constStarBaseSize=null, constStarBaseCol=null;
+const CSTAR_BASE=4.2, CSTAR_HI=14;
 (function buildConstellations(){
-  const verts=[];
+  const verts=[], spos=[], scol=[], ssiz=[]; let si=0;
   for(const c of CONSTELLATIONS){
     const vs=c.stars.map(s=>raDecVec(s[0],s[1],SKY_R*0.995));
     for(const seg of c.lines){ const a=vs[seg[0]], b=vs[seg[1]]; verts.push(a.x,a.y,a.z, b.x,b.y,b.z); }
+    c._sStart=si;
+    for(const v of vs){ spos.push(v.x,v.y,v.z); scol.push(0.58,0.69,0.96); ssiz.push(CSTAR_BASE); si++; }
     const cen=new THREE.Vector3(); vs.forEach(v=>cen.add(v)); cen.multiplyScalar(1/vs.length).setLength(SKY_R*0.99);
+    c._cen=cen;
     const el=document.createElement('div'); el.className='const-label'; el.textContent=c.name;
-    el.addEventListener('click', e=>{ e.stopPropagation(); showInfo(constInfo(c)); lookAtSky(cen); });
+    el.addEventListener('click', e=>{ e.stopPropagation(); selectConstellation(c); });
     const lbl=new CSS2DObject(el); lbl.position.copy(cen); constGroup.add(lbl);
   }
   const g=new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(verts,3));
   constGroup.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color:0x6fb6ff, transparent:true, opacity:0.32 })));
+  const sp=starPoints(new Float32Array(spos), new Float32Array(scol), new Float32Array(ssiz));
+  constStarSize=sp.geometry.attributes.size; constStarCol=sp.geometry.attributes.color;
+  constStarBaseSize=Float32Array.from(ssiz); constStarBaseCol=Float32Array.from(scol);
+  constGroup.add(sp);
 })();
+function highlightConst(c){
+  if(!constStarSize) return;
+  constStarSize.array.set(constStarBaseSize); constStarCol.array.set(constStarBaseCol);
+  if(c) for(let k=0;k<c.stars.length;k++){ const i=c._sStart+k;
+    constStarSize.array[i]=CSTAR_HI; constStarCol.array[i*3]=1; constStarCol.array[i*3+1]=1; constStarCol.array[i*3+2]=1; }
+  constStarSize.needsUpdate=true; constStarCol.needsUpdate=true;
+}
+function selectConstellation(c){
+  if(!constGroup.visible){ constGroup.visible=true; document.getElementById('sky-const').classList.add('active'); }
+  highlightConst(c); showInfo(constInfo(c)); lookAtSky(c._cen);
+}
 
 // ---- Meteor showers: annual radiants + activity windows ----
 const SHOWERS=[
@@ -929,9 +974,9 @@ const showerItems=[];
   for(const s of SHOWERS){
     const v=raDecVec(s.ra,s.dec,SKY_R*0.99); pos.push(v.x,v.y,v.z);
     const el=document.createElement('div'); el.className='shower-label'; el.textContent=s.name;
-    el.addEventListener('click', e=>{ e.stopPropagation(); showInfo(showerInfo(s)); lookAtSky(v); });
+    el.addEventListener('click', e=>{ e.stopPropagation(); selectShower(s); });
     const lbl=new CSS2DObject(el); lbl.position.copy(v); showerGroup.add(lbl);
-    showerItems.push({ s, el });
+    showerItems.push({ s, el, dir:v.clone().normalize() });
   }
   const g=new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
   showerGroup.add(new THREE.Points(g, new THREE.PointsMaterial({ color:0xffb060, size:11, sizeAttenuation:false, map:STAR_TEX, transparent:true, depthWrite:false })));
@@ -944,6 +989,10 @@ function updateShowers(){
     it.el.className='shower-label'+(act?' active':'');
     it.el.textContent=it.s.name+(act?' ● now':' · '+_fmtMD(np));
   }
+}
+function selectShower(s){
+  if(!showerGroup.visible){ showerGroup.visible=true; document.getElementById('sky-showers').classList.add('active'); }
+  updateShowers(); showInfo(showerInfo(s)); lookAtSky(raDecVec(s.ra,s.dec,1));
 }
 
 // ---- Comets: heliocentric Keplerian elements -> live geocentric sky direction ----
@@ -987,7 +1036,7 @@ const cometItems=[]; let cometPosAttr=null;
   COMETS.forEach(c=>{
     const el=document.createElement('div'); el.className='comet-label'; el.textContent='☄ '+c.name.split('/')[0];
     const item={ c, el, lbl:null };
-    el.addEventListener('click', e=>{ e.stopPropagation(); showInfo(cometInfo(c)); if(item.lbl) lookAtSky(item.lbl.position); });
+    el.addEventListener('click', e=>{ e.stopPropagation(); selectComet(c); });
     const lbl=new CSS2DObject(el); cometGroup.add(lbl); item.lbl=lbl;
     cometItems.push(item);
   });
@@ -1003,6 +1052,28 @@ function updateComets(){
     cometPosAttr.array[idx*3]=v.x; cometPosAttr.array[idx*3+1]=v.y; cometPosAttr.array[idx*3+2]=v.z;
   });
   cometPosAttr.needsUpdate=true;
+}
+function selectComet(c){
+  if(!cometGroup.visible){ cometGroup.visible=true; document.getElementById('sky-comets').classList.add('active'); }
+  updateComets(); showInfo(cometInfo(c));
+  const it=cometItems.find(x=>x.c===c); if(it && it.lbl) lookAtSky(it.lbl.position);
+}
+
+// Search hook: match a typed query against Skywatch objects (constellations,
+// comets, meteor showers). Returns the matched name, or null. Used by doSearch.
+function skywatchSearch(ql){
+  const exact=(list)=> list.find(x=>x.name.toLowerCase()===ql)
+    || list.find(x=>x.name.toLowerCase().startsWith(ql))
+    || (ql.length>=4 ? list.find(x=>x.name.toLowerCase().includes(ql)) : null);
+  let c=exact(CONSTELLATIONS); if(c){ selectConstellation(c); return c.name; }
+  let m=COMETS.find(x=>{ const n=x.name.toLowerCase(); return n===ql || n.split('/').some(p=>p&&ql&&(p===ql||p.includes(ql))) || (ql.length>=4&&n.includes(ql)); });
+  if(m){ selectComet(m); return m.name; }
+  let s=exact(SHOWERS);
+  if(!s && (ql.includes('meteor')||ql.includes('shower'))){    // generic -> next upcoming shower
+    const now=new Date(simNow()); s=[...SHOWERS].sort((a,b)=>showerNextPeak(a,now)-showerNextPeak(b,now))[0];
+  }
+  if(s){ selectShower(s); return s.name; }
+  return null;
 }
 
 // Glide the camera out to the celestial sphere and (optionally) face a sky point.
