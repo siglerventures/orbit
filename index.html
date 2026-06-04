@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="2.5">
+<meta name="app-rev" content="2.7">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -905,12 +905,14 @@ function buildGroundTrack(satrec){
 function dotTexture(){
   const c=document.createElement('canvas'); c.width=c.height=64; const g=c.getContext('2d');
   const grd=g.createRadialGradient(32,32,0,32,32,32);
-  grd.addColorStop(0,'rgba(255,255,255,1)'); grd.addColorStop(0.45,'rgba(255,255,255,0.92)');
-  grd.addColorStop(0.7,'rgba(255,255,255,0.35)'); grd.addColorStop(1,'rgba(255,255,255,0)');
+  // Tight dot: small solid core, fast falloff — so 10k+ points read as distinct
+  // grains instead of merging into a glowing carpet at the limb.
+  grd.addColorStop(0,'rgba(255,255,255,1)'); grd.addColorStop(0.28,'rgba(255,255,255,0.9)');
+  grd.addColorStop(0.5,'rgba(255,255,255,0.22)'); grd.addColorStop(1,'rgba(255,255,255,0)');
   g.fillStyle=grd; g.fillRect(0,0,64,64); return new THREE.CanvasTexture(c);
 }
 const SAT_GROUPS = [
-  { file:'starlink', search:'starlink', pages:6, color:[0.74,0.89,1.00], size:0.016, tag:'Low Earth Orbit',    short:'Starlink' },
+  { file:'starlink', search:'starlink', pages:6, color:[0.74,0.89,1.00], size:0.0075, tag:'Low Earth Orbit',    short:'Starlink' },
   { file:'gps',      search:'navstar',  pages:1, color:[0.78,0.94,0.66], size:0.05,  tag:'Medium Earth Orbit', short:'GPS · NAVSTAR' },
   { file:'galileo',  search:'galileo',  pages:1, color:[0.86,0.78,1.00], size:0.05,  tag:'Medium Earth Orbit', short:'Galileo' },
   { file:'geo',      search:null,       pages:0, color:[0.95,0.71,0.35], size:0.06,  tag:'Geostationary belt', short:'GEO satellite' },
@@ -977,9 +979,9 @@ function buildCloud(tles){
       void main(){ vC=color;
         if(size<=0.0){ gl_PointSize=0.0; gl_Position=vec4(2.0,2.0,2.0,1.0); return; }   // size 0 = filtered out -> clip offscreen
         vec4 mv=modelViewMatrix*vec4(position,1.0);
-        gl_PointSize=clamp(size*uVH/(-mv.z), 1.5, 48.0); gl_Position=projectionMatrix*mv; }`,
+        gl_PointSize=clamp(size*uVH/(-mv.z), 0.85, 16.0); gl_Position=projectionMatrix*mv; }`,
     fragmentShader:`uniform sampler2D uTex; varying vec3 vC;
-      void main(){ vec4 tx=texture2D(uTex,gl_PointCoord); if(tx.a<0.12) discard; gl_FragColor=vec4(vC, tx.a); }`,
+      void main(){ vec4 tx=texture2D(uTex,gl_PointCoord); if(tx.a<0.2) discard; gl_FragColor=vec4(vC, tx.a); }`,
     transparent:true, vertexColors:true, depthWrite:false });
   cloud=new THREE.Points(geo, mat); cloud.frustumCulled=false; scene.add(cloud);
 }
