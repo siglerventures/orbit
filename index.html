@@ -136,6 +136,7 @@ const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true; controls.dampingFactor = 0.06;
 controls.rotateSpeed = 0.5; controls.minDistance = 1.04; controls.maxDistance = 150;
 controls.enablePan = false;
+controls.enableZoom = false;   // custom smooth zoom handled below
 
 const sunDir = new THREE.Vector3(5, 1.6, 3).normalize();
 const sun = new THREE.DirectionalLight(0xffffff, 2.2); sun.position.copy(sunDir);
@@ -340,15 +341,36 @@ canvas.addEventListener('click', e=>{
   } else infoEl.classList.remove('show');
 });
 
-// ---------- Fly-to ----------
-let fly=null;
-document.querySelectorAll('#nav button').forEach(b=>b.addEventListener('click',()=>{
-  fly={ from:camera.position.length(), to:parseFloat(b.dataset.dist), t:0 }; }));
-function applyFly(dt){ if(!fly)return;
-  fly.t=Math.min(1,fly.t+dt/1.1);
-  const e=fly.t<0.5?2*fly.t*fly.t:1-Math.pow(-2*fly.t+2,2)/2;
-  camera.position.setLength(fly.from+(fly.to-fly.from)*e);
-  if(fly.t>=1)fly=null;
+// ---------- Zoom + fly-to (smooth, unified) ----------
+const MIND=1.06, MAXD=150;
+let targetDist = THREE.MathUtils.clamp(camera.position.length(), MIND, MAXD);
+const setTarget = d => { targetDist = THREE.MathUtils.clamp(d, MIND, MAXD); };
+
+document.querySelectorAll('#nav button').forEach(b=>
+  b.addEventListener('click', ()=> setTarget(parseFloat(b.dataset.dist))));
+
+// Mouse / trackpad wheel — multiplicative so it feels even at every scale
+canvas.addEventListener('wheel', e=>{
+  e.preventDefault();
+  setTarget(targetDist * Math.exp(e.deltaY * 0.0009));
+}, { passive:false });
+
+// Pinch-to-zoom (touch)
+let pinchPrev=0;
+const pinchDist = e => { const a=e.touches[0], b=e.touches[1];
+  return Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY); };
+canvas.addEventListener('touchstart', e=>{ if(e.touches.length===2) pinchPrev=pinchDist(e); }, {passive:false});
+canvas.addEventListener('touchmove', e=>{
+  if(e.touches.length===2){ e.preventDefault();
+    const d=pinchDist(e); if(pinchPrev) setTarget(targetDist*(pinchPrev/d)); pinchPrev=d; }
+}, {passive:false});
+canvas.addEventListener('touchend', ()=>{ pinchPrev=0; });
+
+// Eased approach toward the target distance each frame
+function applyZoom(dt){
+  const d=camera.position.length();
+  const k=1-Math.exp(-dt*6);
+  camera.position.setLength(d + (targetDist-d)*k);
 }
 
 // ---------- Time control ----------
@@ -395,7 +417,7 @@ function tick(now){
   const gmst=satellite.gstime(date);
   earthGroup.rotation.y=gmst; clouds.rotation.y=now*0.000004;
   if(liveReady){ updateGroup(groups.iss,date); updateGroup(groups.gps,date); updateGroup(groups.starlink,date); }
-  applyFly(dt); controls.update();
+  applyZoom(dt); controls.update();
   const mi=(camera.position.length()-1)*EARTH_MI;
   altVal.textContent=fmt(Math.max(0,mi))+' mi'; regionVal.textContent=region(Math.max(0,mi));
   timeVal.textContent=date.toISOString().substr(11,8);
