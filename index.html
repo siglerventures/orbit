@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="1.7">
+<meta name="app-rev" content="1.8">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -606,7 +606,12 @@ function makeCloud(count, color, size){
 }
 function makeBeacon(color, data){
   const m=new THREE.Mesh(new THREE.SphereGeometry(0.013,16,16), new THREE.MeshBasicMaterial({color}));
-  scene.add(m); pickables.push(m); m.userData=data; return m;
+  m.userData=data; scene.add(m);
+  // The visible dot is tiny; add a larger invisible sphere so it's easy to click.
+  const hit=new THREE.Mesh(new THREE.SphereGeometry(0.05,12,12),
+    new THREE.MeshBasicMaterial({ transparent:true, opacity:0, depthWrite:false }));
+  hit.userData=data; m.add(hit); pickables.push(hit);
+  return m;
 }
 
 async function fetchById(id){
@@ -799,6 +804,10 @@ function updateCloud(){
     arr[i]=x; arr[i+1]=y; arr[i+2]=z;
   }
   cloud.geometry.attributes.position.needsUpdate=true;
+  // The points move (and lift in Exaggerated mode) every frame; recompute the
+  // bounding sphere so the raycaster's broad-phase test doesn't reject clicks
+  // that land on the current shell. Cheap for a few thousand points.
+  cloud.geometry.computeBoundingSphere();
 }
 
 // Identify a clicked cloud point: live altitude + speed straight from the buffers.
@@ -900,7 +909,7 @@ canvas.addEventListener('click', e=>{
   ray.setFromCamera(ndc,camera);
   const meshHit=ray.intersectObjects(pickables,false)[0];
   let cloudHit=null;
-  if(cloud){ ray.params.Points.threshold=Math.max(0.012, camera.position.length()*0.004);
+  if(cloud){ ray.params.Points.threshold=Math.max(0.025, camera.position.length()*0.012);
     cloudHit=ray.intersectObject(cloud,false)[0]; }
   // Pick whichever is nearer the camera (a satellite point or a labelled body).
   if(meshHit && (!cloudHit || meshHit.distance<=cloudHit.distance) && meshHit.object.userData.name){
@@ -908,6 +917,19 @@ canvas.addEventListener('click', e=>{
   } else if(cloudHit){
     selectCloud(cloudHit.index, false);                  // identify + mark, but don't fly on a plain click
   } else { infoEl.classList.remove('show'); selection=null; }
+});
+
+// Hover affordance: turn the cursor into a pointer over any clickable target
+// (satellite dot, ISS, Moon, GEO marker) so it's obvious they're interactive.
+let _hoverAt=0;
+canvas.addEventListener('pointermove', e=>{
+  const now=performance.now(); if(now-_hoverAt<60) return; _hoverAt=now;   // throttle
+  ndc.x=(e.clientX/innerWidth)*2-1; ndc.y=-(e.clientY/innerHeight)*2+1;
+  ray.setFromCamera(ndc,camera);
+  let over=ray.intersectObjects(pickables,false).length>0;
+  if(!over && cloud){ ray.params.Points.threshold=Math.max(0.025, camera.position.length()*0.012);
+    over=ray.intersectObject(cloud,false).length>0; }
+  canvas.style.cursor = over ? 'pointer' : '';
 });
 
 // ---------- Zoom + fly-to (smooth, unified) ----------
