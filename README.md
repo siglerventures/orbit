@@ -57,11 +57,13 @@ python -m http.server 8000
 
 ## Roadmap
 
-- ✅ **Live satellite positions** — ISS, GPS, and Starlink from real TLE data (done).
-- **Exaggerated / logarithmic altitude mode** — a toggle to lift the LEO shells off the surface so LEO, MEO, and GEO are individually navigable instead of clustering near Earth.
-- **Real star catalog** — swap the procedural field for the HYG database so constellations are accurate.
-- **Full Starlink constellation** — option to load all ~12,000 satellites (with instanced rendering for performance).
-- **Ground tracks** — project satellite paths onto the Earth's surface.
+- ✅ **Live satellite positions** — ISS, GPS, and Starlink from real TLE data.
+- ✅ **Exaggerated / logarithmic altitude mode** — a smooth-morphing toggle that lifts the LEO/MEO/GEO/Moon shells apart so each is individually navigable; the HUD still reports true altitude.
+- ✅ **Full constellations** — Starlink/GPS/Galileo/GEO/stations propagated in a Web Worker and drawn as one interpolated point cloud, fed by daily Celestrak snapshots (`data/*.txt`, written by a GitHub Action) with the live API as fallback.
+- ✅ **Post-processing & real terminator** — `UnrealBloomPass` + ACES tone mapping, and a day/night terminator computed from the real subsolar point.
+- ✅ **Search + labels** — find any satellite by name or NORAD id and fly to it; CSS2D labels and a selection marker.
+- ✅ **Real star catalog** — an inertial bright-star catalog (placed by RA/Dec, sized by magnitude, coloured by B–V) with a procedural fallback.
+- ✅ **Ground tracks** — the ISS subsatellite path projected onto the surface.
 
 ## Credits
 

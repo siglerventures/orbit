@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="1.5">
+<meta name="app-rev" content="1.6">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -653,6 +653,29 @@ function issTrail(satrec){
   ringScalables.push({ obj:l, trueR:mean });   // nearly-constant LEO radius — uniform scale is exact enough
 }
 
+// Ground track: the subsatellite point projected onto the surface, painted on the
+// rotating globe (child of earthGroup, so it turns with the Earth). Covers ~one
+// revolution centred on the current time; rebuilt periodically to stay fresh.
+let groundTrackLine=null;
+function buildGroundTrack(satrec){
+  const PERIOD=92*60*1000, STEPS=200, start=simNow()-0.15*PERIOD, span=PERIOD*1.05;
+  const pts=[], v=new THREE.Vector3();
+  for(let i=0;i<=STEPS;i++){
+    const t=new Date(start+span*i/STEPS);
+    const pv=satellite.propagate(satrec,t); if(!pv || !pv.position) continue;
+    eciToScene(pv.position,v).normalize();
+    const gm=satellite.gstime(t), cosG=Math.cos(gm), sinG=Math.sin(gm);
+    const xl=v.x*cosG - v.z*sinG, zl=v.x*sinG + v.z*cosG;   // ECI -> Earth-fixed (undo earthGroup spin)
+    pts.push(new THREE.Vector3(xl*1.0025, v.y*1.0025, zl*1.0025));
+  }
+  const geo=new THREE.BufferGeometry().setFromPoints(pts);
+  if(groundTrackLine){ groundTrackLine.geometry.dispose(); groundTrackLine.geometry=geo; }
+  else {
+    groundTrackLine=new THREE.Line(geo, new THREE.LineBasicMaterial({ color:0x5fe0c0, transparent:true, opacity:0.5 }));
+    earthGroup.add(groundTrackLine);
+  }
+}
+
 // ===== Bulk constellation cloud (worker-driven, interpolated) =====
 function dotTexture(){
   const c=document.createElement('canvas'); c.width=c.height=64; const g=c.getContext('2d');
@@ -800,7 +823,8 @@ async function loadSatellites(){
     const iss=await fetchById(25544);
     groups.iss={ satrecs:iss, beacon: makeBeacon(0x9bf0ff, { tag:'Low Earth Orbit', name:'ISS — ~250 mi',
       text:'The International Space Station, tracked live. It orbits ~250 mi up at 17,500 mph, circling Earth every ~92 minutes.' }) };
-    if(iss[0]) issTrail(iss[0]);
+    if(iss[0]){ issTrail(iss[0]); buildGroundTrack(iss[0]);
+      setInterval(()=>{ if(groups.iss && groups.iss.satrecs[0]) buildGroundTrack(groups.iss.satrecs[0]); }, 4000); }
   }catch(_){ /* ISS optional — the cloud may still load */ }
 
   // Bulk constellations -> one worker-driven cloud
