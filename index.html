@@ -3,7 +3,45 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
+     (Version {REV}) are filled from this meta tag at runtime. Bump this on
+     EVERY client change; never hard-code the version anywhere else. -->
+<meta name="app-rev" content="1.0">
 <title>Earth → Orbit</title>
+<script>
+// ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
+// Forces a one-time ?v={rev} reload whenever the served rev doesn't match
+// localStorage, so a version bump reaches users without a manual hard-refresh.
+(function(){
+  try {
+    var meta = document.querySelector('meta[name="app-rev"]');
+    var rev = meta && meta.content;
+    if(!rev) return;
+    var params = new URLSearchParams(window.location.search);
+    if(params.get('v') === rev){
+      try { localStorage.setItem('orbit_lastRev', rev); } catch(_){}
+      return;
+    }
+    var lastRev = null;
+    try { lastRev = localStorage.getItem('orbit_lastRev'); } catch(_){}
+    if(lastRev !== rev){
+      params.set('v', rev);
+      window.location.replace(window.location.pathname + '?' + params.toString() + window.location.hash);
+    }
+  } catch(_){ /* localStorage disabled — app still works, just no cache-bust */ }
+})();
+</script>
+<script>
+// Single source of truth: the version is defined ONCE in <meta name="app-rev">
+// above. This fills the footer (v{REV}) and login screen (Version {REV}) from
+// it at load, so the displayed rev can never drift. Bump ONLY the meta tag.
+document.addEventListener('DOMContentLoaded', function(){
+  var rev = (document.querySelector('meta[name="app-rev"]') || {}).content || '';
+  if(!rev) return;
+  var f = document.getElementById('orbit-version');       if(f) f.textContent = 'v' + rev;
+  var l = document.getElementById('orbit-login-version'); if(l) l.textContent = rev;
+});
+</script>
 <style>
   :root { --fg:#e9f1fb; --muted:#9fb3cc; --accent:#4ea3ff; --amber:#f2b65a; }
   * { box-sizing:border-box; }
@@ -61,9 +99,75 @@
     #nav button { min-width:104px; padding:7px 10px; font-size:12px; }
     #hud { min-width:180px; }
   }
+
+  /* ===== Access shell (login gate · footer · modals) ===== */
+  #loginScreen { position:fixed; inset:0; z-index:200; background:radial-gradient(ellipse at 50% 30%, #0a1426 0%, #05070d 70%);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:24px; text-align:center; }
+  #loginScreen h1 { margin:0; font-size:26px; font-weight:600; letter-spacing:0.4px; }
+  #loginScreen .sub { color:var(--muted); font-size:13px; margin-bottom:10px; }
+  #loginScreen .lg-card { width:100%; max-width:330px; display:flex; flex-direction:column; gap:9px; }
+  .lg-input { width:100%; padding:11px 14px; background:rgba(20,30,48,0.7); border:1px solid rgba(120,160,210,0.25);
+    border-radius:10px; color:var(--fg); font-size:14px; }
+  .lg-btn { width:100%; padding:11px 14px; border-radius:10px; border:1px solid rgba(120,160,210,0.25);
+    background:rgba(40,70,120,0.6); color:var(--fg); font-size:14px; cursor:pointer; font-weight:500; }
+  .lg-btn:hover { border-color:var(--accent); background:rgba(40,70,120,0.85); }
+  .lg-btn.google { background:#fff; color:#1a1a1a; border-color:#fff; font-weight:600; }
+  .lg-row { display:flex; gap:8px; }
+  .lg-link { background:none; border:none; color:var(--muted); font-size:11px; text-decoration:underline; cursor:pointer; padding:4px; }
+  #loginScreen .or { color:var(--muted); font-size:12px; margin:4px 0; }
+  #lg-msg { min-height:16px; font-size:12px; color:var(--amber); }
+  #lg-ver { margin-top:14px; color:var(--muted); font-size:11px; }
+
+  #orbit-footer { position:fixed; left:50%; bottom:10px; transform:translateX(-50%); z-index:60;
+    display:none; align-items:center; gap:2px; font-size:11px; color:var(--muted);
+    background:rgba(10,16,28,0.55); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    border:1px solid rgba(120,160,210,0.18); border-radius:12px; padding:6px 12px; max-width:94vw; flex-wrap:wrap; justify-content:center; }
+  #orbit-footer .flink { cursor:pointer; color:var(--muted); padding:0 4px; }
+  #orbit-footer .flink:hover { color:var(--accent); }
+  #orbit-footer .sep { color:rgba(120,160,210,0.4); }
+  #orbit-footer #orbit-user-pill img { width:14px; height:14px; border-radius:50%; vertical-align:middle; margin-right:4px; }
+
+  .orbit-modal { display:none; position:fixed; inset:0; z-index:300; background:rgba(0,0,0,0.55);
+    align-items:flex-start; justify-content:center; padding:48px 18px; overflow-y:auto; backdrop-filter:blur(4px); }
+  .orbit-modal .sheet { background:#0e1626; border:1px solid rgba(120,160,210,0.22); border-radius:16px;
+    width:100%; max-width:520px; padding:26px; position:relative; box-shadow:0 20px 60px rgba(0,0,0,0.5); color:var(--fg); }
+  .orbit-modal .close { position:absolute; top:14px; right:14px; width:30px; height:30px; border-radius:50%;
+    background:rgba(20,30,48,0.8); border:1px solid rgba(120,160,210,0.25); color:var(--muted); cursor:pointer; font-size:15px; }
+  .orbit-modal h2 { margin:0 0 2px; font-size:19px; font-weight:700; }
+  .orbit-modal .eyebrow { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:18px; }
+  .orbit-modal .field { width:100%; padding:9px 11px; border:1px solid rgba(120,160,210,0.25); border-radius:9px;
+    font-size:13px; background:rgba(20,30,48,0.7); color:var(--fg); }
+  .orbit-modal .card { background:rgba(20,30,48,0.5); border:1px solid rgba(120,160,210,0.18); border-radius:11px; padding:15px; margin-bottom:14px; }
+  .orbit-modal .primary { background:#2f6bd6; color:#fff; border:none; padding:9px 16px; border-radius:9px; font-size:13px; font-weight:600; cursor:pointer; }
+  .orbit-modal .ghost { background:rgba(20,30,48,0.7); color:var(--muted); border:1px solid rgba(120,160,210,0.25); padding:8px 16px; border-radius:9px; font-size:13px; cursor:pointer; }
+  .role-pill { font-size:10px; padding:2px 7px; border-radius:20px; font-weight:600; text-transform:uppercase; letter-spacing:0.4px; }
+  .role-admin { background:rgba(242,182,90,0.18); color:var(--amber); }
+  .role-moderator { background:rgba(78,163,255,0.18); color:var(--accent); }
+  .role-user { background:rgba(120,160,210,0.18); color:var(--muted); }
 </style>
 </head>
 <body>
+  <!-- ==== Login gate (Google + email/password) ==== -->
+  <div id="loginScreen">
+    <h1>Earth → Orbit</h1>
+    <div class="sub">Live satellite tracking · sign in to continue</div>
+    <div class="lg-card">
+      <button class="lg-btn google" onclick="orbitGoogleSignIn()">Sign in with Google</button>
+      <div class="or">or</div>
+      <input type="email" id="lg-email" class="lg-input" placeholder="your.email@example.com" autocomplete="email"
+        onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('lg-pw').focus();}" />
+      <input type="password" id="lg-pw" class="lg-input" placeholder="Password (6+ characters)" autocomplete="current-password"
+        onkeydown="if(event.key==='Enter'){event.preventDefault();orbitEmailSignIn();}" />
+      <div class="lg-row">
+        <button class="lg-btn" style="flex:1" onclick="orbitEmailSignIn()">Sign In</button>
+        <button class="lg-btn" style="flex:1" onclick="orbitEmailSignUp()" title="New users — set up your account">Create Account</button>
+      </div>
+      <button class="lg-link" onclick="orbitForgotPassword()">Forgot password?</button>
+      <div id="lg-msg"></div>
+    </div>
+    <div id="lg-ver">Version <span id="orbit-login-version"></span></div>
+  </div>
+
   <div id="loader"><div class="spin"></div><p id="loadMsg">Loading planetary textures…</p></div>
   <canvas id="scene"></canvas>
 
@@ -433,6 +537,321 @@ addEventListener('resize',()=>{
   camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(innerWidth,innerHeight);
 });
+</script>
+
+<!-- ==== Standard footer ==== -->
+<div id="orbit-footer">
+  <span id="orbit-version"></span>
+  <span class="sep">·</span><span class="flink" id="orbit-data-link" style="display:none" onclick="orbitOpenData()">📦 Data</span>
+  <span class="sep">·</span><span class="flink" id="orbit-history-link" onclick="orbitOpenHistory()">📜 History</span>
+  <span class="sep">·</span><span class="flink" id="orbit-people-link" style="display:none" onclick="orbitOpenPeople()">👥 People</span>
+  <span class="sep">·</span><span id="orbit-user-pill"></span>
+  <span class="sep">·</span><span class="flink" onclick="if(confirm('Sign out of Orbit?'))orbitSignOut()">🚪 Sign Out</span>
+</div>
+
+<!-- ==== DATA modal (admin) ==== -->
+<div id="orbit-data-modal" class="orbit-modal">
+  <div class="sheet">
+    <button class="close" onclick="orbitCloseModal('orbit-data-modal')">✕</button>
+    <h2>📦 Data Manager</h2>
+    <div class="eyebrow">Backup · Export</div>
+    <div class="card">
+      <div style="font-size:14px;font-weight:600;margin-bottom:3px">📦 Roster Backup (JSON)</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Download the full access roster (orbit/people) as JSON.</div>
+      <button class="primary" onclick="orbitBackup()">⬇️ Download Backup</button>
+    </div>
+    <div id="orbit-data-status" style="font-size:12px;color:var(--muted);font-family:monospace;min-height:16px"></div>
+    <div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="ghost" onclick="orbitCloseModal('orbit-data-modal')">Close</button></div>
+  </div>
+</div>
+
+<!-- ==== HISTORY modal (members) ==== -->
+<div id="orbit-history-modal" class="orbit-modal">
+  <div class="sheet">
+    <button class="close" onclick="orbitCloseModal('orbit-history-modal')">✕</button>
+    <h2>📜 History</h2>
+    <div class="eyebrow">Access &amp; roster activity</div>
+    <div id="orbit-history-list" style="display:flex;flex-direction:column;gap:6px"></div>
+  </div>
+</div>
+
+<!-- ==== PEOPLE / ACCESS modal (admin) ==== -->
+<div id="orbit-people-modal" class="orbit-modal">
+  <div class="sheet">
+    <button class="close" onclick="orbitCloseModal('orbit-people-modal')">✕</button>
+    <h2>👥 People &amp; Access</h2>
+    <div class="eyebrow">Who can sign in · roles</div>
+    <div class="card">
+      <div style="font-size:13px;font-weight:600;margin-bottom:10px">Add / update person</div>
+      <input id="orbit-acc-email" type="email" placeholder="name@example.com" autocomplete="off" class="field" style="box-sizing:border-box" />
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <select id="orbit-acc-role" class="field" style="flex:1;min-width:220px">
+          <option value="admin">Admin — full access + People + Data</option>
+          <option value="moderator">Moderator — full view, no admin tools</option>
+          <option value="user" selected>User — normal access</option>
+        </select>
+        <button class="primary" onclick="orbitAddPerson()">+ Add / Update</button>
+      </div>
+    </div>
+    <div id="orbit-acc-status" style="font-size:12px;margin-bottom:10px;min-height:16px"></div>
+    <div style="font-size:13px;font-weight:600;margin-bottom:8px">Current access</div>
+    <div id="orbit-acc-list" style="display:flex;flex-direction:column;gap:6px"></div>
+    <div style="font-size:11px;color:var(--muted);margin-top:14px;line-height:1.6">Root admins (Phil &amp; Trinity) always have admin access and aren't listed here. Changes take effect the next time that person signs in.</div>
+  </div>
+</div>
+
+<!-- ==== Firebase access shell ==== -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+import { getDatabase, ref, set, get, push, query, orderByChild, limitToLast } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
+  createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCrW9Lrf7fWVqRxKqsnuPK0tL6UYbd_qds",
+  authDomain: "philinity-893d2.firebaseapp.com",
+  databaseURL: "https://philinity-893d2-default-rtdb.firebaseio.com",
+  projectId: "philinity-893d2",
+  storageBucket: "philinity-893d2.firebasestorage.app",
+  messagingSenderId: "443020781676",
+  appId: "1:443020781676:web:614ec91c9ba33076eb9049"
+};
+
+// Both root UIDs are always-admin and lockout-proof. Kept identical to the
+// shared access model in autoflag-installs (Phil + Trinity).
+const ROOT_ADMIN_UIDS = ['CuJigrzCbRfFFsM7uqe0mix46xH3', 'g4stabGPKiWAE23NTw6oUsqawWf1'];
+const VALID_ROLES = ['admin', 'moderator', 'user'];
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+const auth = getAuth(app);
+
+let ORBIT_ROLE = null;
+let ORBIT_EMAIL = null;
+
+// Email → RTDB key. MUST match the security-rules transform and AutoFlag's
+// emailToKey exactly (lowercase + global replace of chars RTDB keys reject).
+function emailToKey(email) {
+  if (!email) return '';
+  return email.toLowerCase().trim()
+    .replace(/\./g, '_')
+    .replace(/#/g, '_HASH_')
+    .replace(/\$/g, '_DOL_')
+    .replace(/\[/g, '_OB_')
+    .replace(/\]/g, '_CB_')
+    .replace(/\//g, '_FS_');
+}
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+
+// Resolve a user's role: root UID → admin; else orbit/people/{emailKey}.
+// Bounces null-role users (not root, not on the roster).
+async function resolveAccess(user) {
+  if (ROOT_ADMIN_UIDS.includes(user.uid)) return { role: 'admin' };
+  try {
+    const key = emailToKey(user.email || '');
+    if (!key) return null;
+    const snap = await get(ref(db, 'orbit/people/' + key));
+    const rec = snap.val();
+    if (rec && VALID_ROLES.includes(rec.role)) return { role: rec.role };
+  } catch (e) {
+    console.error('Access resolution failed:', e);
+  }
+  return null;
+}
+
+function setMsg(text, ok) {
+  const el = document.getElementById('lg-msg');
+  if (el) { el.textContent = text || ''; el.style.color = ok ? '#7fe0a0' : 'var(--amber)'; }
+}
+function mapAuthError(e) {
+  const code = e && e.code || '';
+  if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found')
+    return "Wrong email or password. New here? Click 'Create Account'.";
+  if (code === 'auth/email-already-in-use') return "An account already exists for this email. Use Sign In, or 'Forgot password?'.";
+  if (code === 'auth/weak-password') return 'Password must be at least 6 characters.';
+  if (code === 'auth/too-many-requests') return 'Too many attempts. Wait a few minutes and try again.';
+  if (code === 'auth/network-request-failed') return 'Network problem. Check your connection and retry.';
+  return (e && e.message) || 'Sign-in failed. Please try again.';
+}
+function readLogin() {
+  const email = (document.getElementById('lg-email').value || '').trim();
+  const pw = document.getElementById('lg-pw').value || '';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setMsg("That email doesn't look valid"); return null; }
+  return { email, pw };
+}
+
+window.orbitGoogleSignIn = async () => {
+  try { await signInWithPopup(auth, new GoogleAuthProvider()); }
+  catch (e) { console.error(e); setMsg(mapAuthError(e)); }
+};
+window.orbitEmailSignIn = async () => {
+  const r = readLogin(); if (!r) return;
+  if (!r.pw) { setMsg('Enter your password'); return; }
+  setMsg('Signing in…', true);
+  try { await signInWithEmailAndPassword(auth, r.email, r.pw); }
+  catch (e) { setMsg(mapAuthError(e)); }
+};
+window.orbitEmailSignUp = async () => {
+  const r = readLogin(); if (!r) return;
+  if (!r.pw || r.pw.length < 6) { setMsg('Pick a password with at least 6 characters'); return; }
+  setMsg('Creating account…', true);
+  try { await createUserWithEmailAndPassword(auth, r.email, r.pw); }
+  catch (e) { setMsg(mapAuthError(e)); }
+};
+window.orbitForgotPassword = async () => {
+  const r = readLogin(); if (!r) return;
+  setMsg('Sending reset email…', true);
+  try { await sendPasswordResetEmail(auth, r.email); setMsg('✓ Check ' + r.email + ' for a reset link.', true); }
+  catch (e) { setMsg(mapAuthError(e)); }
+};
+window.orbitSignOut = async () => { await signOut(auth); location.reload(); };
+
+// Show/hide admin-only footer links + render the user pill.
+function applyRoleToUI(user) {
+  const isAdmin = ORBIT_ROLE === 'admin';
+  const dataLink = document.getElementById('orbit-data-link');
+  const peopleLink = document.getElementById('orbit-people-link');
+  if (dataLink) dataLink.style.display = isAdmin ? 'inline' : 'none';
+  if (peopleLink) peopleLink.style.display = isAdmin ? 'inline' : 'none';
+  const pill = document.getElementById('orbit-user-pill');
+  if (pill && user) {
+    const name = escapeHtml(user.displayName || user.email || 'User');
+    const photo = (user.photoURL || '').replace(/"/g, '%22');
+    const avatar = photo ? '<img src="' + photo + '" alt="">' : '';
+    pill.innerHTML = avatar + '<span>' + name + '</span>' + (isAdmin ? ' <span style="color:var(--amber)">★</span>' : '');
+  }
+}
+
+onAuthStateChanged(auth, async (user) => {
+  const login = document.getElementById('loginScreen');
+  const footer = document.getElementById('orbit-footer');
+  if (!user) {
+    if (login) login.style.display = 'flex';
+    if (footer) footer.style.display = 'none';
+    return;
+  }
+  const access = await resolveAccess(user);
+  if (!access) {
+    setMsg('This account is not authorized for Orbit.');
+    await signOut(auth);
+    return;
+  }
+  ORBIT_ROLE = access.role;
+  ORBIT_EMAIL = user.email || '';
+  applyRoleToUI(user);
+  if (login) login.style.display = 'none';
+  if (footer) footer.style.display = 'flex';
+});
+
+// ---------- Modals ----------
+window.orbitCloseModal = (id) => { const m = document.getElementById(id); if (m) m.style.display = 'none'; };
+
+window.orbitOpenData = () => {
+  if (ORBIT_ROLE !== 'admin') return;
+  document.getElementById('orbit-data-status').textContent = '';
+  document.getElementById('orbit-data-modal').style.display = 'flex';
+};
+window.orbitBackup = async () => {
+  const status = document.getElementById('orbit-data-status');
+  try {
+    const snap = await get(ref(db, 'orbit/people'));
+    const data = { app: 'orbit', exportedAt: new Date().toISOString(), people: snap.val() || {} };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'orbit-roster-' + new Date().toISOString().slice(0, 10) + '.json';
+    a.click(); URL.revokeObjectURL(url);
+    status.textContent = '✓ Backup downloaded.';
+  } catch (e) { status.textContent = 'Error: ' + (e.code || e.message || 'failed'); }
+};
+
+window.orbitOpenHistory = async () => {
+  const modal = document.getElementById('orbit-history-modal');
+  const list = document.getElementById('orbit-history-list');
+  modal.style.display = 'flex';
+  list.innerHTML = '<div style="color:var(--muted);font-size:12px">Loading…</div>';
+  try {
+    const snap = await get(query(ref(db, 'orbit/history'), orderByChild('ts'), limitToLast(50)));
+    const data = snap.val() || {};
+    const rows = Object.values(data).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    if (!rows.length) { list.innerHTML = '<div style="color:var(--muted);font-size:12px">No activity yet.</div>'; return; }
+    list.innerHTML = rows.map(r => {
+      const when = r.ts ? new Date(r.ts).toLocaleString() : '';
+      return '<div style="background:rgba(20,30,48,0.5);border:1px solid rgba(120,160,210,0.15);border-radius:8px;padding:8px 10px;font-size:12px">'
+        + '<span style="color:var(--fg)">' + escapeHtml(r.action || '') + ' ' + escapeHtml(r.email || '') + '</span>'
+        + (r.role ? ' <span class="role-pill role-' + escapeHtml(r.role) + '">' + escapeHtml(r.role) + '</span>' : '')
+        + '<div style="color:var(--muted);margin-top:2px">' + escapeHtml(when) + (r.by ? ' · by ' + escapeHtml(r.by) : '') + '</div></div>';
+    }).join('');
+  } catch (e) {
+    list.innerHTML = '<div style="color:var(--amber);font-size:12px">Could not load history: ' + escapeHtml(e.code || e.message || 'error') + '</div>';
+  }
+};
+
+window.orbitOpenPeople = () => {
+  if (ORBIT_ROLE !== 'admin') return;
+  document.getElementById('orbit-acc-status').textContent = '';
+  document.getElementById('orbit-people-modal').style.display = 'flex';
+  renderAccessList();
+};
+async function logHistory(action, email, role) {
+  try { await push(ref(db, 'orbit/history'), { ts: Date.now(), action, email, role: role || null, by: ORBIT_EMAIL || '' }); }
+  catch (_) { /* history is best-effort */ }
+}
+window.orbitAddPerson = async () => {
+  if (ORBIT_ROLE !== 'admin') return;
+  const status = document.getElementById('orbit-acc-status');
+  const email = (document.getElementById('orbit-acc-email').value || '').trim().toLowerCase();
+  const role = document.getElementById('orbit-acc-role').value;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    status.innerHTML = '<span style="color:var(--amber)">Enter a valid email address.</span>'; return;
+  }
+  const key = emailToKey(email);
+  const rec = { email, role, name: email.split('@')[0], addedAt: new Date().toISOString(), addedBy: ORBIT_EMAIL || '' };
+  try {
+    await set(ref(db, 'orbit/people/' + key), rec);
+    await logHistory('Added/updated', email, role);
+    status.innerHTML = '<span style="color:#7fe0a0">Saved ' + escapeHtml(email) + ' as ' + escapeHtml(role) + ' ✓</span>';
+    document.getElementById('orbit-acc-email').value = '';
+    renderAccessList();
+  } catch (e) {
+    status.innerHTML = '<span style="color:var(--amber)">Error: ' + escapeHtml(e.code || e.message || 'failed') + '</span>';
+  }
+};
+window.orbitRemovePerson = async (key, email) => {
+  if (ORBIT_ROLE !== 'admin') return;
+  if (!confirm('Remove ' + email + ' from Orbit access?')) return;
+  try {
+    await set(ref(db, 'orbit/people/' + key), null);
+    await logHistory('Removed', email);
+    renderAccessList();
+  } catch (e) {
+    document.getElementById('orbit-acc-status').innerHTML = '<span style="color:var(--amber)">Error: ' + escapeHtml(e.code || e.message || 'failed') + '</span>';
+  }
+};
+async function renderAccessList() {
+  const list = document.getElementById('orbit-acc-list');
+  list.innerHTML = '<div style="color:var(--muted);font-size:12px">Loading…</div>';
+  try {
+    const snap = await get(ref(db, 'orbit/people'));
+    const data = snap.val() || {};
+    const keys = Object.keys(data);
+    if (!keys.length) { list.innerHTML = '<div style="color:var(--muted);font-size:12px">No one added yet. Root admins always have access.</div>'; return; }
+    list.innerHTML = keys.map(k => {
+      const r = data[k] || {};
+      return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:rgba(20,30,48,0.5);border:1px solid rgba(120,160,210,0.15);border-radius:9px;padding:8px 11px">'
+        + '<div style="min-width:0"><div style="font-size:13px;color:var(--fg);overflow:hidden;text-overflow:ellipsis">' + escapeHtml(r.email || k) + '</div></div>'
+        + '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">'
+        + '<span class="role-pill role-' + escapeHtml(r.role || 'user') + '">' + escapeHtml(r.role || 'user') + '</span>'
+        + '<button class="ghost" style="padding:4px 10px;font-size:12px" onclick="orbitRemovePerson(\'' + escapeHtml(k) + '\',\'' + escapeHtml(r.email || k) + '\')">Remove</button>'
+        + '</div></div>';
+    }).join('');
+  } catch (e) {
+    list.innerHTML = '<div style="color:var(--amber);font-size:12px">Could not load roster: ' + escapeHtml(e.code || e.message || 'error') + '</div>';
+  }
+}
 </script>
 </body>
 </html>
