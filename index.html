@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.4">
+<meta name="app-rev" content="3.5">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -559,6 +559,18 @@ function selectRecTLE(rec){
 
 const searchMsgEl=document.getElementById('searchMsg');
 function searchMsg(t){ searchMsgEl.textContent=t||''; }
+// Full active-satellite catalog (data/catalog.txt, ~11k objects) for searching ANY
+// NORAD id or name — loaded lazily on first search, indexed by id, never rendered.
+let satCatalog=null, _catalogPromise=null;
+function loadCatalog(){
+  if(satCatalog) return Promise.resolve(satCatalog);
+  if(!_catalogPromise) _catalogPromise=fetch('data/catalog.txt')
+    .then(r=>{ if(!r.ok) throw 0; return r.text(); })
+    .then(txt=>{ const recs=parseTLE(txt), byId=new Map(); for(const rec of recs) byId.set(rec.id, rec);
+      satCatalog={recs, byId}; return satCatalog; })
+    .catch(_=>{ _catalogPromise=null; return null; });
+  return _catalogPromise;
+}
 async function doSearch(qRaw){
   const q=(qRaw||'').trim(); if(!q) return;
   searchMsg('Searching…');
@@ -567,11 +579,10 @@ async function doSearch(qRaw){
     if(id===25544 && flyToISS()){ searchMsg(''); return; }      // ISS is tracked separately from the cloud
     const idx=cloudMeta.findIndex(m=>m.id===id);
     if(idx>=0){ selectCloud(idx,true); searchMsg(''); return; }
-    try{
-      const r=await fetch(`${API}/${id}`); if(!r.ok) throw 0; const j=await r.json();
-      if(selectRecTLE({ name:(j.name||'').trim()||('NORAD '+id), l1:j.line1, l2:j.line2, id })) searchMsg('');
-      else searchMsg('Could not load that NORAD id.');
-    }catch(_){ searchMsg('NORAD '+id+' isn’t in the loaded set (live lookup unavailable).'); }
+    const cat=await loadCatalog();                               // any other active satellite, from the offline catalog
+    const rec=cat && cat.byId.get(id);
+    if(rec && selectRecTLE(rec)){ searchMsg(''); return; }
+    searchMsg(cat ? ('NORAD '+id+' isn’t in the active-satellite catalog.') : 'Catalog unavailable — try again shortly.');
     return;
   }
   const ql=q.toLowerCase();
@@ -581,11 +592,13 @@ async function doSearch(qRaw){
   let idx=cloudMeta.findIndex(m=>m.name && m.name.toLowerCase()===ql);
   if(idx<0) idx=cloudMeta.findIndex(m=>m.name && m.name.toLowerCase().includes(ql));
   if(idx>=0){ selectCloud(idx,true); searchMsg(''); return; }
-  try{
-    const recs=await fetchSearchTLE(q,1);
-    if(recs.length && selectRecTLE(recs[0])) searchMsg('');
-    else searchMsg('No match in the loaded set for “'+q+'” (live lookup unavailable).');
-  }catch(_){ searchMsg('No match in the loaded set for “'+q+'” (live lookup unavailable).'); }
+  const cat=await loadCatalog();                                 // name search across the full catalog
+  if(cat){
+    let rec=cat.recs.find(r=>r.name && r.name.toLowerCase()===ql)
+         || cat.recs.find(r=>r.name && r.name.toLowerCase().includes(ql));
+    if(rec && selectRecTLE(rec)){ searchMsg(''); return; }
+  }
+  searchMsg('No match for “'+q+'”.');
 }
 const searchInput=document.getElementById('searchInput');
 searchInput.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); doSearch(searchInput.value); } });
