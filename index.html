@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.9">
+<meta name="app-rev" content="3.10">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -208,20 +208,24 @@ document.addEventListener('DOMContentLoaded', function(){
   #loader p { font-size:13px; color:var(--muted); }
 
   @media (max-width:640px){
-    #title { max-width:64vw; padding:9px 11px; }
+    #title { top:58px; left:8px; max-width:60vw; padding:9px 11px; }
     #title h1 { font-size:14px; }
     #title p { font-size:11px; }
-    #nav { gap:5px; right:8px; top:8px; max-height:calc(100vh - 16px); }
+    /* Top toolbar stays at the top (like desktop): home · search · explore · passes */
+    #search { top:8px; }
+    #search input { width:38vw; }
+    #homeBtn { top:8px; left:8px; bottom:auto; }
+    #exploreBtn { top:8px; left:auto; right:54px; bottom:auto; }
+    #passBtn { top:8px; left:auto; right:8px; bottom:auto; }
+    #explore { top:56px; bottom:auto; }
+    #passes { top:56px; bottom:auto; }
+    /* Nav drops below the toolbar so they don't collide */
+    #nav { gap:5px; right:8px; top:58px; max-height:calc(100vh - 72px); }
     #nav button { min-width:96px; padding:6px 10px; font-size:12px; }
     #nav .navhead { min-width:96px; padding:6px 10px; }
     #nav button small { margin-left:6px; }
     #hud { min-width:148px; }
-    #search input { width:150px; }
-    #homeBtn { top:auto; bottom:14px; left:14px; }   /* clear of the search bar on small screens */
-    #exploreBtn { top:auto; bottom:14px; left:62px; }
-    #explore { top:auto; bottom:62px; }
-    #passBtn { top:auto; bottom:14px; left:110px; }
-    #passes { top:auto; bottom:62px; }
+    #orbit-footer { font-size:10.5px; gap:3px 6px; bottom:8px; padding:5px 9px; }
   }
 
   /* ===== Access shell (login gate · footer · modals) ===== */
@@ -1936,7 +1940,6 @@ addEventListener('resize',()=>{
 <div id="orbit-footer">
   <span id="orbit-version"></span>
   <span class="sep">·</span><span class="flink" id="orbit-data-link" style="display:none" onclick="orbitOpenData()">📦 Data</span>
-  <span class="sep">·</span><span class="flink" id="orbit-history-link" onclick="orbitOpenHistory()">📜 History</span>
   <span class="sep">·</span><span class="flink" id="orbit-people-link" style="display:none" onclick="orbitOpenPeople()">👥 People</span>
   <span class="sep">·</span><span id="orbit-user-pill"></span>
   <span class="sep">·</span><span class="flink" onclick="if(confirm('Sign out of Orbit?'))orbitSignOut()">🚪 Sign Out</span>
