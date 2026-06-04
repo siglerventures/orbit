@@ -46,6 +46,7 @@ jobs:
           fetch galileo  galileo
           fetch geo      geo
           fetch stations stations
+          fetch active   catalog     # full active-satellite catalog for NORAD/name search (not rendered)
 
       - name: Fetch star catalog (once / refresh)
         run: |
