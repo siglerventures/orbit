@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.15">
+<meta name="app-rev" content="3.16">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -1140,8 +1140,8 @@ const _mtA=new THREE.Vector3(), _mt1=new THREE.Vector3(), _mt2=new THREE.Vector3
 })();
 function meteorInterval(){    // gap between meteors, scaled by real ZHR of active showers
   const now=new Date(); let z=0; for(const s of SHOWERS) if(showerActive(s,now)) z+=s.zhr;
-  const perSec=0.05 + z*0.02;   // sporadic baseline + active rate (ZHR 150 → bursts; nothing active → ~1/15s)
-  return (0.6+Math.random()*0.9)/perSec;
+  const perSec=0.55 + z*0.035;   // lively baseline even off-season (~1 every 1.5-3s); active showers rain
+  return (0.5+Math.random()*0.8)/perSec;
 }
 function spawnMeteor(){
   const m=meteors.find(x=>!x.active); if(!m) return;
