@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.19">
+<meta name="app-rev" content="3.20">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -618,11 +618,18 @@ function flyToConstellation(short){
   selectCloud(best, true);                               // select + ring + label + fly
   return true;
 }
+// Bottom-left distance readout: any selected body sets hudDist() -> {mi,name};
+// null falls back to the camera's altitude. Recomputed live each frame.
+const AU_MI = AU_KM/MI_KM;            // 1 AU in miles
+let hudDist=null;
+function recAltMi(sr){ const pv=satellite.propagate(sr,new Date(simNow())); if(!pv||!pv.position) return 0; eciToScene(pv.position,_tmpA); return (_tmpA.length()-1)*EARTH_MI; }
+function cloudAltMi(i){ if(!cloudCur) return 0; const x=cloudCur[i*3],y=cloudCur[i*3+1],z=cloudCur[i*3+2]; return (Math.hypot(x,y,z)-1)*EARTH_MI; }
 // Fly to the ISS wherever it currently is (it's tracked separately from the cloud).
 function flyToISS(){
   if(!groups.iss || !groups.iss.satrecs[0]) return false;
   selection={ kind:'rec', satrec:groups.iss.satrecs[0], name:'ISS', id:25544 };
   selEl.textContent='ISS';
+  hudDist=()=>({ mi:recAltMi(groups.iss.satrecs[0]), name:'ISS' });
   showInfo(describeRec(selection)); flyToSelection(); return true;
 }
 // Fly to a planet (fixed scene position in its real geocentric direction).
@@ -630,6 +637,7 @@ function flyToPlanet(name){
   const p=planetByName(name); if(!p) return false;
   selection={ kind:'obj', obj:p.mesh, name:p.def.name };
   selEl.textContent=p.def.name;
+  hudDist=()=>({ mi:(p.distAU||0)*AU_MI, name:'Planet · '+p.def.name });
   showInfo(p.mesh.userData);
   flyDir=p.mesh.position.clone().normalize();
   setTarget(Math.min(MAXD-3, p.sceneR*1.32));   // stand off just beyond the planet
@@ -637,6 +645,7 @@ function flyToPlanet(name){
 }
 function selectCloud(idx, fly){
   selection={ kind:'cloud', idx };
+  hudDist=()=>({ mi:cloudAltMi(idx), name:(cloudMeta[idx]&&cloudMeta[idx].name)||'Satellite' });
   const d=describeCloud(idx);
   if(d){ showInfo(d); selEl.textContent=(cloudMeta[idx] && cloudMeta[idx].name) || d.name; }
   if(fly) flyToSelection();
@@ -656,6 +665,7 @@ function selectRecTLE(rec){
   let sr; try{ sr=satellite.twoline2satrec(rec.l1, rec.l2); }catch(_){ return false; }
   selection={ kind:'rec', satrec:sr, name:rec.name, id:rec.id };
   selEl.textContent=rec.name||('NORAD '+rec.id);
+  hudDist=()=>({ mi:recAltMi(sr), name:rec.name||('NORAD '+rec.id) });
   showInfo(describeRec(selection)); flyToSelection(); return true;
 }
 
@@ -1156,7 +1166,7 @@ function highlightConst(c){
 }
 function selectConstellation(c){
   if(!constGroup.visible){ constGroup.visible=true; document.getElementById('sky-const').classList.add('active'); }
-  highlightConst(c); showInfo(constInfo(c)); lookAtSky(c._cen);
+  highlightConst(c); showInfo(constInfo(c)); lookAtSky(c._cen); hudDist=null;   // stars: no meaningful "miles"
 }
 
 // ---- Meteor showers: annual radiants + activity windows ----
@@ -1268,7 +1278,7 @@ function updateShowers(){
 }
 function selectShower(s){
   if(!showerGroup.visible){ showerGroup.visible=true; document.getElementById('sky-showers').classList.add('active'); }
-  updateShowers(); showInfo(showerInfo(s)); lookAtSky(raDecVec(s.ra,s.dec,1));
+  updateShowers(); showInfo(showerInfo(s)); lookAtSky(raDecVec(s.ra,s.dec,1)); hudDist=null;   // a radiant has no single distance
 }
 
 // ---- Comets: heliocentric Keplerian elements -> live geocentric sky direction ----
@@ -1361,6 +1371,7 @@ function updateComets(){
 function selectComet(c){
   if(!cometGroup.visible){ cometGroup.visible=true; document.getElementById('sky-comets').classList.add('active'); }
   updateComets(); showInfo(cometInfo(c));
+  hudDist=()=>({ mi:cometGeo(c,new Date(simNow())).distAU*AU_MI, name:c.name });
   const it=cometItems.find(x=>x.c===c); if(it && it.lbl) lookAtSky(it.lbl.position);
 }
 
@@ -1468,6 +1479,7 @@ function nearestAsteroid(){ const date=new Date(simNow()); let best=ASTEROIDS[0]
 function selectAsteroid(a){
   if(!asteroidGroup.visible){ asteroidGroup.visible=true; document.getElementById('sky-asteroids').classList.add('active'); }
   updateAsteroids(); showInfo(asteroidInfo(a));
+  hudDist=()=>({ mi:cometGeo(a,new Date(simNow())).distAU*AU_MI, name:a.name });
   const it=astItems.find(x=>x.a===a); if(it && it.lbl) lookAtSky(it.lbl.position);
 }
 document.getElementById('sky-asteroids').addEventListener('click', function(){
@@ -1827,7 +1839,7 @@ function showInfo(d){
   document.getElementById('infoText').textContent=d.text||'';
   infoEl.classList.add('show');
 }
-function deselect(){ infoEl.classList.remove('show'); selection=null; }
+function deselect(){ infoEl.classList.remove('show'); selection=null; hudDist=null; }
 document.getElementById('infoClose').addEventListener('click', deselect);
 canvas.addEventListener('click', e=>{
   ndc.x=(e.clientX/innerWidth)*2-1; ndc.y=-(e.clientY/innerHeight)*2+1;
@@ -1842,7 +1854,7 @@ canvas.addEventListener('click', e=>{
   if(meshHit && (!cloudHit || meshHit.distance<=cloudHit.distance) && meshHit.object.userData.name){
     const obj=meshHit.object, p=planets.find(x=> x.mesh===obj || x.mesh===obj.parent);
     if(p){ focusConstellation(null); flyToPlanet(p.def.name); }                          // planet: fly to it
-    else if(obj===moon){ selection={kind:'obj',obj:moon}; selEl.textContent='The Moon'; showInfo(moon.userData); flyToSelection(); }   // Moon: fly to it
+    else if(obj===moon){ selection={kind:'obj',obj:moon}; selEl.textContent='The Moon'; hudDist=()=>({mi:238900,name:'The Moon'}); showInfo(moon.userData); flyToSelection(); }   // Moon: fly to it
     else { showInfo(obj.userData); selection=null; }                                     // other labelled body: just info
   } else if(cloudHit){
     if(selection && selection.kind==='cloud' && selection.idx===cloudHit.index) deselect();  // re-click to unselect
@@ -1898,7 +1910,7 @@ document.querySelectorAll('#nav button').forEach(b=>
     if(key==='iss' && flyToISS()) return;       // ISS: fly to wherever it is right now
     deselect();
     if(!shellMi){ setTarget(1.28); return; }    // Surface
-    if(b.dataset.orient==='moon'){ flyDir=moon.position.clone().normalize(); showInfo(moon.userData); }   // Moon: look toward it + show its card (incl. light-travel time)
+    if(b.dataset.orient==='moon'){ selection={kind:'obj',obj:moon}; selEl.textContent='The Moon'; hudDist=()=>({mi:238900,name:'The Moon'}); flyDir=moon.position.clone().normalize(); showInfo(moon.userData); }   // Moon: select + fly like a planet
     setTarget(displayRadiusAt(alt(shellMi), morphTarget) * standoff);     // Moon (or ISS fallback)
   }));
 
@@ -2297,14 +2309,9 @@ function tick(now){
   for(const lbl of skyLabels){ lbl.visible = !!(lbl.parent && lbl.parent.visible) && !occludedByEarth(lbl); }
   updateSelection();
   applyZoom(dt); controls.update();
-  // HUD readout: a selected planet/Moon shows ITS distance from Earth; otherwise camera altitude.
-  let hudMi=null, hudRegion=null;
-  if(selection && selection.kind==='obj'){
-    const sp=planets.find(x=>x.mesh===selection.obj);
-    if(sp && sp.distAU!=null){ hudMi=sp.distAU*AU_KM/MI_KM; hudRegion='Planet · '+sp.def.name; }
-    else if(selection.obj===moon){ hudMi=238900; hudRegion='The Moon'; }
-  }
-  if(hudMi!=null){ altVal.textContent=fmt(Math.round(hudMi))+' mi'; regionVal.textContent=hudRegion; }
+  // HUD readout: whatever is selected shows ITS distance from Earth; else camera altitude.
+  const hf = hudDist && hudDist();
+  if(hf){ altVal.textContent=fmt(Math.round(Math.max(0,hf.mi)))+' mi'; regionVal.textContent=hf.name; }
   else { const mi=(trueFromDisplay(camera.position.length())-1)*EARTH_MI;   // HUD reports true altitude
     altVal.textContent=fmt(Math.max(0,mi))+' mi'; regionVal.textContent=region(Math.max(0,mi)); }
   timeVal.textContent=date.toISOString().substr(11,8);
