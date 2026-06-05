@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.18">
+<meta name="app-rev" content="3.19">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -369,6 +369,7 @@ document.addEventListener('DOMContentLoaded', function(){
         <button class="sky" id="sky-comets" data-tip="Toggle notable comets at their live computed sky positions.">Comets</button>
         <button class="sky" id="sky-milkyway" data-tip="Show the Milky Way band and fly to the galactic centre.">Milky Way</button>
         <button class="sky" id="sky-asteroids" data-tip="Show the asteroid belt along the ecliptic plus named asteroids; flies to the nearest one.">Asteroids</button>
+        <button class="sky" id="sky-aurora" data-tip="Toggle the auroras (northern & southern lights) glowing over the poles.">Aurora</button>
       </div>
     </div>
   </div>
@@ -722,6 +723,38 @@ const applyMap = (file, set) => planetLoader.load(PTEX+file, t=>{ t.colorSpace=T
 
 // ---------- Earth (spins with sidereal time) ----------
 const earthGroup = new THREE.Group(); scene.add(earthGroup);
+
+// ---------- Aurora: glowing light curtains around both poles (child of earthGroup) ----------
+const auroraGroup=new THREE.Group(); auroraGroup.visible=false; earthGroup.add(auroraGroup);
+const auroraUniforms={ uT:{ value:0 } };
+(function buildAurora(){
+  function curtain(sign){            // +1 = borealis (north), -1 = australis (south)
+    const N=200, pos=[], aH=[], aA=[], D=Math.PI/180;
+    const latB=70*D, latT=64*D, rB=1.006, rT=1.10;
+    const pt=(lat,a,r)=>{ const cl=Math.cos(lat); return [cl*Math.cos(a)*r, sign*Math.sin(lat)*r, -cl*Math.sin(a)*r]; };
+    for(let i=0;i<N;i++){
+      const a0=i/N*2*Math.PI, a1=(i+1)/N*2*Math.PI, f0=i/N, f1=(i+1)/N;
+      const b0=pt(latB,a0,rB), t0=pt(latT,a0,rT), b1=pt(latB,a1,rB), t1=pt(latT,a1,rT);
+      pos.push(...b0,...t0,...b1, ...t0,...t1,...b1);
+      aH.push(0,1,0, 1,1,0); aA.push(f0,f0,f1, f0,f1,f1);
+    }
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+    g.setAttribute('aH', new THREE.Float32BufferAttribute(aH,1));
+    g.setAttribute('aA', new THREE.Float32BufferAttribute(aA,1));
+    const mat=new THREE.ShaderMaterial({ uniforms:auroraUniforms,
+      vertexShader:`attribute float aH; attribute float aA; varying float vH; varying float vA;
+        void main(){ vH=aH; vA=aA; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+      fragmentShader:`varying float vH; varying float vA; uniform float uT;
+        void main(){ float sh=0.5+0.5*sin(vA*38.0+uT*1.6)*sin(vA*13.0-uT*0.9+1.7);
+          float a=(1.0-vH)*(0.14+0.55*sh);
+          vec3 col=mix(vec3(0.20,1.0,0.5), vec3(0.6,0.15,0.9), vH*vH);   // green base -> red/purple tips
+          gl_FragColor=vec4(col*a, a); }`,
+      transparent:true, depthWrite:false, side:THREE.DoubleSide, blending:THREE.AdditiveBlending });
+    auroraGroup.add(new THREE.Mesh(g, mat));
+  }
+  curtain(1); curtain(-1);
+})();
 const earthMat = new THREE.MeshPhongMaterial({
   map: dayTex, specularMap: specTex, normalMap: normTex,
   normalScale: new THREE.Vector2(0.7, 0.7), specular: new THREE.Color(0x2a3a55), shininess: 14
@@ -1442,9 +1475,13 @@ document.getElementById('sky-asteroids').addEventListener('click', function(){
   toggleSky(this, asteroidGroup, updateAsteroids); selectAsteroid(nearestAsteroid());
 });
 
+document.getElementById('sky-aurora').addEventListener('click', function(){
+  const on=!auroraGroup.visible; auroraGroup.visible=on; this.classList.toggle('active', on);
+  if(on){ deselect(); flyDir=new THREE.Vector3(0.25,0.82,0.32).normalize(); setTarget(2.7); }   // tilt up to the north pole to see it
+});
 // Reset every Skywatch layer (used by Home).
 function resetSkywatch(){
-  [[constGroup,'sky-const'],[showerGroup,'sky-showers'],[cometGroup,'sky-comets'],[mwGroup,'sky-milkyway'],[asteroidGroup,'sky-asteroids']].forEach(([g,id])=>{
+  [[constGroup,'sky-const'],[showerGroup,'sky-showers'],[cometGroup,'sky-comets'],[mwGroup,'sky-milkyway'],[asteroidGroup,'sky-asteroids'],[auroraGroup,'sky-aurora']].forEach(([g,id])=>{
     g.visible=false; const b=document.getElementById(id); if(b) b.classList.remove('active');
   });
   if(typeof highlightConst==='function') highlightConst(null);
@@ -2248,6 +2285,7 @@ function tick(now){
   updateMeteors(dt);   // animate shooting meteors (real-time)
   updateSun(date);     // keep the Sun in its true sky direction
   updatePlanetMoons();
+  auroraUniforms.uT.value = now*0.001;   // shimmer the auroras
   if(locPinLabel) locPinLabel.visible = !occludedByEarth(locPinLabel);   // hide the "You" pin when it's on the far side
   // Show planet labels only when zoomed out toward them; hide a planet's own
   // label while it's the selected body (the selection label already names it).
