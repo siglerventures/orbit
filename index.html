@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.23">
+<meta name="app-rev" content="3.24">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -1864,16 +1864,19 @@ canvas.addEventListener('click', e=>{
   }
   // Pick whichever is nearer the camera (a satellite point or a labelled body).
   if(meshHit && (!cloudHit || meshHit.distance<=cloudHit.distance) && meshHit.object.userData.name){
-    const obj=meshHit.object, p=planets.find(x=> x.mesh===obj || x.mesh===obj.parent);
-    if(p){ if(selection&&selection.kind==='obj'&&selection.obj===p.mesh) enterFocus(p.mesh, p.def.r);   // click again -> orbit it
-           else { exitFocus(); focusConstellation(null); flyToPlanet(p.def.name); } }
-    else if(obj===moon || obj===moonHit || obj.parent===moon){
-      if(selection&&selection.kind==='obj'&&selection.obj===moon) enterFocus(moon, 0.273);              // click again -> orbit the Moon
-      else { exitFocus(); selection={kind:'obj',obj:moon}; selEl.textContent='The Moon'; hudDist=()=>({mi:238900,name:'The Moon'}); showInfo(moon.userData); flyToSelection(); } }
-    else if(obj===sunHit){
-      if(selection&&selection.kind==='obj'&&selection.obj===sunGroup) enterFocus(sunGroup, 4.8);        // click again -> orbit the Sun
-      else { exitFocus(); selection={kind:'obj',obj:sunGroup}; selEl.textContent='The Sun'; const d=new Date(simNow()); showInfo(sunInfo(d)); hudDist=()=>({mi:sunDistAU(new Date(simNow()))*AU_MI, name:'The Sun'}); lookAtSky(sunSceneDir(d)); } }
-    else { exitFocus(); showInfo(obj.userData); selection=null; }                         // other labelled body: just info
+    const obj=meshHit.object;
+    let body=null, radius=0, fly=null;     // resolve which body was clicked + how to fly to it
+    const p=planets.find(x=> x.mesh===obj || x.mesh===obj.parent);
+    if(p){ body=p.mesh; radius=p.def.r; fly=()=>{ focusConstellation(null); flyToPlanet(p.def.name); }; }
+    else if(obj===moon || obj===moonHit || obj.parent===moon){ body=moon; radius=0.273;
+      fly=()=>{ selection={kind:'obj',obj:moon}; selEl.textContent='The Moon'; hudDist=()=>({mi:238900,name:'The Moon'}); showInfo(moon.userData); flyToSelection(); }; }
+    else if(obj===sunHit){ body=sunGroup; radius=4.8;
+      fly=()=>{ selection={kind:'obj',obj:sunGroup}; selEl.textContent='The Sun'; const d=new Date(simNow()); showInfo(sunInfo(d)); hudDist=()=>({mi:sunDistAU(new Date(simNow()))*AU_MI, name:'The Sun'}); lookAtSky(sunSceneDir(d)); }; }
+    if(body){
+      if(focus && focus.body===body) exitFocus();                                          // click the focused body -> exit orbit view
+      else if(!focus && selection && selection.kind==='obj' && selection.obj===body) enterFocus(body, radius);   // click selected body again -> orbit it
+      else { exitFocus(); fly(); }                                                          // first click / switching bodies -> fly to it
+    } else { exitFocus(); showInfo(obj.userData); selection=null; }                         // other labelled body: just info
   } else if(cloudHit){
     exitFocus();
     if(selection && selection.kind==='cloud' && selection.idx===cloudHit.index) deselect();  // re-click to unselect
