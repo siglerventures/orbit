@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.21">
+<meta name="app-rev" content="3.22">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -949,12 +949,15 @@ const moon = new THREE.Mesh(new THREE.SphereGeometry(0.273,64,64), moonMat);
 const moonTrueR = alt(238900);
 const moonDir = moonSceneDir(new Date());   // real current Moon direction (refreshed in the loop)
 moon.position.copy(moonDir).multiplyScalar(moonTrueR);
-scene.add(moon); pickables.push(moon);
+scene.add(moon);
+const moonHit=new THREE.Mesh(new THREE.SphereGeometry(0.273*2.4,12,12), new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false}));
+moon.add(moonHit); pickables.push(moonHit);   // generous click target, like the planets
 const moonLabelEl=document.createElement('div'); moonLabelEl.className='body-label'; moonLabelEl.textContent='The Moon';
 const moonLabel=new CSS2DObject(moonLabelEl); moonLabel.position.set(0,0.36,0); moon.add(moonLabel);
 moon.userData={ tag:'Cislunar space', name:'The Moon — 238,900 mi',
   text:'Earth\u2019s natural satellite, ~60 Earth-radii away — about 960× farther than the ISS. '
     +'Its light reaches Earth in '+lightTime(238900*MI_KM/C_KMS)+' — so you always see the Moon as it was that long ago.' };
+moonHit.userData=moon.userData;   // so clicking the hit sphere registers as the Moon
 
 // ---------- GEO (representative, geostationary so ~static) ----------
 function ring(radius, inclDeg, color, op){
@@ -1861,7 +1864,7 @@ canvas.addEventListener('click', e=>{
   if(meshHit && (!cloudHit || meshHit.distance<=cloudHit.distance) && meshHit.object.userData.name){
     const obj=meshHit.object, p=planets.find(x=> x.mesh===obj || x.mesh===obj.parent);
     if(p){ focusConstellation(null); flyToPlanet(p.def.name); }                          // planet: fly to it
-    else if(obj===moon){ selection={kind:'obj',obj:moon}; selEl.textContent='The Moon'; hudDist=()=>({mi:238900,name:'The Moon'}); showInfo(moon.userData); flyToSelection(); }   // Moon: fly to it
+    else if(obj===moon || obj===moonHit || obj.parent===moon){ selection={kind:'obj',obj:moon}; selEl.textContent='The Moon'; hudDist=()=>({mi:238900,name:'The Moon'}); showInfo(moon.userData); flyToSelection(); }   // Moon: fly to it
     else if(obj===sunHit){ selection=null; selEl.textContent='The Sun'; const d=new Date(simNow()); showInfo(sunInfo(d)); hudDist=()=>({mi:sunDistAU(new Date(simNow()))*AU_MI, name:'The Sun'}); lookAtSky(sunSceneDir(d)); }   // Sun: face it + info
     else { showInfo(obj.userData); selection=null; }                                     // other labelled body: just info
   } else if(cloudHit){
@@ -2311,7 +2314,7 @@ function tick(now){
   // label while it's the selected body (the selection label already names it).
   const plLabels = camera.position.length()>28;
   for(const p of planets) p.label.visible = plLabels && !(selection && selection.kind==='obj' && selection.obj===p.mesh) && !occludedByEarth(p.label);
-  moonLabel.visible = !occludedByEarth(moonLabel);
+  moonLabel.visible = !occludedByEarth(moonLabel) && !(selection && selection.kind==='obj' && selection.obj===moon);   // hide own label when selected (avoids double "The Moon")
   // Sky labels: visible only when their layer is ON *and* not behind the globe.
   // (CSS2DRenderer ignores parent-group visibility, so we must gate it here.)
   for(const lbl of skyLabels){ lbl.visible = !!(lbl.parent && lbl.parent.visible) && !occludedByEarth(lbl); }
