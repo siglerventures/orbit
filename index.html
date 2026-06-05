@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.24">
+<meta name="app-rev" content="3.25">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -347,6 +347,7 @@ document.addEventListener('DOMContentLoaded', function(){
         <button data-shellmi="12550" data-standoff="2.6" data-track="gps" data-tip="GPS (NAVSTAR) — US navigation satellites in medium Earth orbit at ~12,550 mi.">GPS <small>12,550 mi</small></button>
         <button data-shellmi="22236" data-standoff="2.12" data-track="geo" data-tip="Geostationary belt at 22,236 mi — satellites here hover over a fixed point (TV, weather, comms).">GEO <small>22,236 mi</small></button>
         <button data-shellmi="238900" data-standoff="1.55" data-track="all" data-orient="moon" data-tip="The Moon — Earth's natural satellite, ~238,900 mi away (about 960× farther than the ISS).">Moon <small>238,900 mi</small></button>
+        <button class="sky" id="ride-iss" data-tip="Ride along with the ISS — camera locked to the station looking down at Earth.">🚀 Ride the ISS</button>
       </div>
     </div>
     <div class="navgroup collapsed" id="grp-planets">
@@ -583,7 +584,7 @@ function updateSelection(){
   } else { selMarker.visible=false; selLabel.visible=false; }
 }
 function flyToSelection(){
-  if(focus) exitFocus();              // leave any body-orbit view before a fresh fly-to
+  if(focus) exitFocus(); if(riding) exitRide();   // leave any locked camera mode before a fresh fly-to
   if(!selectionScenePos(_selPos)) return;
   flyDir=_selPos.clone().normalize();
   const trueR = morph>1e-4 ? trueFromDisplay(_selPos.length()) : _selPos.length();
@@ -636,6 +637,7 @@ function flyToISS(){
 // Fly to a planet (fixed scene position in its real geocentric direction).
 function flyToPlanet(name){
   const p=planetByName(name); if(!p) return false;
+  if(riding) exitRide();
   selection={ kind:'obj', obj:p.mesh, name:p.def.name };
   selEl.textContent=p.def.name;
   hudDist=()=>({ mi:(p.distAU||0)*AU_MI, name:'Planet · '+p.def.name });
@@ -1423,7 +1425,8 @@ function occludedByEarth(obj){
 // Overlays sit at SKY_R; the camera looks toward the origin, so to centre a sky
 // direction D we sit on the opposite side (-D) and pull out near max distance.
 function lookAtSky(dir){
-  if(typeof exitFocus==='function') exitFocus();   // leave any body-orbit view
+  if(typeof exitFocus==='function') exitFocus();   // leave any locked camera mode
+  if(typeof exitRide==='function') exitRide();
   if(dir) flyDir=dir.clone().normalize().multiplyScalar(-1);
   setTarget(MAXD);
 }
@@ -1851,7 +1854,7 @@ function showInfo(d){
   document.getElementById('infoText').textContent=d.text||'';
   infoEl.classList.add('show');
 }
-function deselect(){ infoEl.classList.remove('show'); selection=null; hudDist=null; if(typeof exitFocus==='function') exitFocus(); }
+function deselect(){ infoEl.classList.remove('show'); selection=null; hudDist=null; if(typeof exitFocus==='function') exitFocus(); if(typeof exitRide==='function') exitRide(); }
 document.getElementById('infoClose').addEventListener('click', deselect);
 canvas.addEventListener('click', e=>{
   ndc.x=(e.clientX/innerWidth)*2-1; ndc.y=-(e.clientY/innerHeight)*2+1;
@@ -1878,7 +1881,7 @@ canvas.addEventListener('click', e=>{
       else { exitFocus(); fly(); }                                                          // first click / switching bodies -> fly to it
     } else { exitFocus(); showInfo(obj.userData); selection=null; }                         // other labelled body: just info
   } else if(cloudHit){
-    exitFocus();
+    exitFocus(); exitRide();
     if(selection && selection.kind==='cloud' && selection.idx===cloudHit.index) deselect();  // re-click to unselect
     else selectCloud(cloudHit.index, false);             // identify + mark, but don't fly on a plain click
   } else { deselect(); }                                  // empty space clears the selection (also exits focus)
@@ -1921,13 +1924,39 @@ function exitFocus(){
   targetDist=THREE.MathUtils.clamp(camera.position.length(), MIND, MAXD); flyDir=null;
 }
 
+// ---------- "Ride the ISS" — lock the camera just above/behind the station ----------
+let riding=false; const _issP=new THREE.Vector3(), _issP2=new THREE.Vector3(), _issRad=new THREE.Vector3();
+function issScenePos(date, out){ const sr=groups.iss&&groups.iss.satrecs[0]; if(!sr) return false;
+  const pv=satellite.propagate(sr,date); if(!pv||!pv.position) return false; eciToScene(pv.position,out); return true; }
+function enterRide(){
+  if(!issScenePos(new Date(simNow()),_issP)) return;
+  exitFocus(); deselect(); flyDir=null; riding=true; controls.enabled=false;
+  document.getElementById('ride-iss').classList.add('active');
+  hudDist=()=>({ mi:recAltMi(groups.iss.satrecs[0]), name:'Riding the ISS' });
+  showInfo({ tag:'Onboard the ISS', name:'Riding the ISS', text:'Locked to the station, looking down at Earth — watch continents scroll by, cross into night and see the city lights flare. Bump the time speed (60× / 600×) to fast-forward an orbit. Click anywhere or press Home to step off.' });
+}
+function exitRide(){
+  if(!riding) return; riding=false; controls.enabled=true;
+  const b=document.getElementById('ride-iss'); if(b) b.classList.remove('active');
+  controls.target.set(0,0,0); flyDir=null;
+  targetDist=THREE.MathUtils.clamp(camera.position.length(), MIND, MAXD);
+}
+function updateRide(date){
+  if(!issScenePos(date,_issP)){ exitRide(); return; }
+  issScenePos(new Date(date.getTime()+8000), _issP2); _issP2.sub(_issP).normalize();   // along-track direction
+  _issRad.copy(_issP).normalize();
+  camera.position.copy(_issP).addScaledVector(_issRad, 0.18).addScaledVector(_issP2, -0.08);   // above + slightly behind
+  camera.lookAt(0,0,0);   // gaze down at Earth
+}
+document.getElementById('ride-iss').addEventListener('click', function(){ hideIntro(); if(riding) exitRide(); else enterRide(); });
+
 // Fly-to presets frame each shell in whichever scale mode is active: convert the
 // shell's true altitude through the (target-state) remap, then stand off by a factor.
 document.querySelectorAll('#nav button').forEach(b=>
   b.addEventListener('click', ()=>{
     if(b.classList.contains('navhead')) return;    // group headers toggle collapse (handled separately)
     if(b.classList.contains('sky')) return;        // 🔭 Skywatch toggles handle themselves
-    hideIntro(); exitFocus();                      // leaving a body's orbit view
+    hideIntro(); exitFocus(); exitRide();          // leaving any locked camera mode
     if(b.dataset.planet){ focusConstellation(null); flyToPlanet(b.dataset.planet); return; }   // planets
     const key=b.dataset.track;
     setTracking(key);                           // reflect the focused constellation's count
@@ -1968,7 +1997,7 @@ scaleBtn.addEventListener('click', ()=>{
 
 // Mouse / trackpad wheel — multiplicative so it feels even at every scale
 canvas.addEventListener('wheel', e=>{
-  if(focus) return;                 // focus mode: OrbitControls handles zoom around the body
+  if(focus||riding) return;         // focus/ride mode: OrbitControls or locked camera handles zoom
   e.preventDefault();
   setTarget(targetDist * Math.exp(e.deltaY * 0.0009));
 }, { passive:false });
@@ -1979,7 +2008,7 @@ const pinchDist = e => { const a=e.touches[0], b=e.touches[1];
   return Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY); };
 canvas.addEventListener('touchstart', e=>{ if(e.touches.length===2) pinchPrev=pinchDist(e); }, {passive:false});
 canvas.addEventListener('touchmove', e=>{
-  if(focus) return;                 // focus mode: native pinch-zoom via OrbitControls
+  if(focus||riding) return;         // focus/ride mode handles its own camera
   if(e.touches.length===2){ e.preventDefault();
     const d=pinchDist(e); if(pinchPrev) setTarget(targetDist*(pinchPrev/d)); pinchPrev=d; }
 }, {passive:false});
@@ -2350,7 +2379,8 @@ function tick(now){
   // (CSS2DRenderer ignores parent-group visibility, so we must gate it here.)
   for(const lbl of skyLabels){ lbl.visible = !!(lbl.parent && lbl.parent.visible) && !occludedByEarth(lbl); }
   updateSelection();
-  if(focus){ focus.body.getWorldPosition(_focusTmp); controls.target.lerp(_focusTmp, 0.3); selMarker.visible=false; controls.update(); }   // orbit the focused body (follows it as it moves)
+  if(riding){ updateRide(date); selMarker.visible=false; }                                       // locked to the ISS
+  else if(focus){ focus.body.getWorldPosition(_focusTmp); controls.target.lerp(_focusTmp, 0.3); selMarker.visible=false; controls.update(); }   // orbit the focused body (follows it as it moves)
   else { applyZoom(dt); controls.update(); }
   // HUD readout: whatever is selected shows ITS distance from Earth; else camera altitude.
   const hf = hudDist && hudDist();
