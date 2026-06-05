@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.25">
+<meta name="app-rev" content="3.26">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -1868,17 +1868,16 @@ canvas.addEventListener('click', e=>{
   // Pick whichever is nearer the camera (a satellite point or a labelled body).
   if(meshHit && (!cloudHit || meshHit.distance<=cloudHit.distance) && meshHit.object.userData.name){
     const obj=meshHit.object;
-    let body=null, radius=0, fly=null;     // resolve which body was clicked + how to fly to it
+    let body=null, radius=0, meta=null;    // resolve which body was clicked + its info/HUD
     const p=planets.find(x=> x.mesh===obj || x.mesh===obj.parent);
-    if(p){ body=p.mesh; radius=p.def.r; fly=()=>{ focusConstellation(null); flyToPlanet(p.def.name); }; }
+    if(p){ body=p.mesh; radius=p.def.r; meta=()=>{ focusConstellation(null); selection={kind:'obj',obj:p.mesh}; selEl.textContent=p.def.name; hudDist=()=>({mi:(p.distAU||0)*AU_MI,name:'Planet · '+p.def.name}); showInfo(p.mesh.userData); }; }
     else if(obj===moon || obj===moonHit || obj.parent===moon){ body=moon; radius=0.273;
-      fly=()=>{ selection={kind:'obj',obj:moon}; selEl.textContent='The Moon'; hudDist=()=>({mi:238900,name:'The Moon'}); showInfo(moon.userData); flyToSelection(); }; }
+      meta=()=>{ selection={kind:'obj',obj:moon}; selEl.textContent='The Moon'; hudDist=()=>({mi:238900,name:'The Moon'}); showInfo(moon.userData); }; }
     else if(obj===sunHit){ body=sunGroup; radius=4.8;
-      fly=()=>{ selection={kind:'obj',obj:sunGroup}; selEl.textContent='The Sun'; const d=new Date(simNow()); showInfo(sunInfo(d)); hudDist=()=>({mi:sunDistAU(new Date(simNow()))*AU_MI, name:'The Sun'}); lookAtSky(sunSceneDir(d)); }; }
+      meta=()=>{ selection={kind:'obj',obj:sunGroup}; selEl.textContent='The Sun'; const d=new Date(simNow()); showInfo(sunInfo(d)); hudDist=()=>({mi:sunDistAU(new Date(simNow()))*AU_MI, name:'The Sun'}); }; }
     if(body){
-      if(focus && focus.body===body) exitFocus();                                          // click the focused body -> exit orbit view
-      else if(!focus && selection && selection.kind==='obj' && selection.obj===body) enterFocus(body, radius);   // click selected body again -> orbit it
-      else { exitFocus(); fly(); }                                                          // first click / switching bodies -> fly to it
+      if(focus && focus.body===body) exitFocus();              // click the focused body again -> step back out
+      else { exitFocus(); meta(); enterFocus(body, radius); }   // click a body -> fly in and orbit it (drag to spin around it)
     } else { exitFocus(); showInfo(obj.userData); selection=null; }                         // other labelled body: just info
   } else if(cloudHit){
     exitFocus(); exitRide();
@@ -1925,12 +1924,12 @@ function exitFocus(){
 }
 
 // ---------- "Ride the ISS" — lock the camera just above/behind the station ----------
-let riding=false; const _issP=new THREE.Vector3(), _issP2=new THREE.Vector3(), _issRad=new THREE.Vector3();
+let riding=false, rideZoom=1; const _issP=new THREE.Vector3(), _issP2=new THREE.Vector3(), _issRad=new THREE.Vector3();
 function issScenePos(date, out){ const sr=groups.iss&&groups.iss.satrecs[0]; if(!sr) return false;
   const pv=satellite.propagate(sr,date); if(!pv||!pv.position) return false; eciToScene(pv.position,out); return true; }
 function enterRide(){
   if(!issScenePos(new Date(simNow()),_issP)) return;
-  exitFocus(); deselect(); flyDir=null; riding=true; controls.enabled=false;
+  exitFocus(); deselect(); flyDir=null; riding=true; rideZoom=1; controls.enabled=false;
   document.getElementById('ride-iss').classList.add('active');
   hudDist=()=>({ mi:recAltMi(groups.iss.satrecs[0]), name:'Riding the ISS' });
   showInfo({ tag:'Onboard the ISS', name:'Riding the ISS', text:'Locked to the station, looking down at Earth — watch continents scroll by, cross into night and see the city lights flare. Bump the time speed (60× / 600×) to fast-forward an orbit. Click anywhere or press Home to step off.' });
@@ -1945,7 +1944,7 @@ function updateRide(date){
   if(!issScenePos(date,_issP)){ exitRide(); return; }
   issScenePos(new Date(date.getTime()+8000), _issP2); _issP2.sub(_issP).normalize();   // along-track direction
   _issRad.copy(_issP).normalize();
-  camera.position.copy(_issP).addScaledVector(_issRad, 0.18).addScaledVector(_issP2, -0.08);   // above + slightly behind
+  camera.position.copy(_issP).addScaledVector(_issRad, 0.18*rideZoom).addScaledVector(_issP2, -0.08*rideZoom);   // above + behind, scaled by zoom
   camera.lookAt(0,0,0);   // gaze down at Earth
 }
 document.getElementById('ride-iss').addEventListener('click', function(){ hideIntro(); if(riding) exitRide(); else enterRide(); });
@@ -1997,7 +1996,8 @@ scaleBtn.addEventListener('click', ()=>{
 
 // Mouse / trackpad wheel — multiplicative so it feels even at every scale
 canvas.addEventListener('wheel', e=>{
-  if(focus||riding) return;         // focus/ride mode: OrbitControls or locked camera handles zoom
+  if(riding){ e.preventDefault(); rideZoom=THREE.MathUtils.clamp(rideZoom*Math.exp(e.deltaY*0.0012), 0.6, 26); return; }   // zoom out/in while riding
+  if(focus) return;                 // focus mode: OrbitControls handles zoom around the body
   e.preventDefault();
   setTarget(targetDist * Math.exp(e.deltaY * 0.0009));
 }, { passive:false });
@@ -2008,7 +2008,9 @@ const pinchDist = e => { const a=e.touches[0], b=e.touches[1];
   return Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY); };
 canvas.addEventListener('touchstart', e=>{ if(e.touches.length===2) pinchPrev=pinchDist(e); }, {passive:false});
 canvas.addEventListener('touchmove', e=>{
-  if(focus||riding) return;         // focus/ride mode handles its own camera
+  if(e.touches.length===2 && riding){ e.preventDefault();
+    const d=pinchDist(e); if(pinchPrev) rideZoom=THREE.MathUtils.clamp(rideZoom*(pinchPrev/d), 0.6, 26); pinchPrev=d; return; }   // pinch zoom while riding
+  if(focus||riding) return;         // focus mode handles its own camera
   if(e.touches.length===2){ e.preventDefault();
     const d=pinchDist(e); if(pinchPrev) setTarget(targetDist*(pinchPrev/d)); pinchPrev=d; }
 }, {passive:false});
