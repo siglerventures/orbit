@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.20">
+<meta name="app-rev" content="3.21">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -935,6 +935,13 @@ buildFallbackStars(); loadRealStars();
 
 const pickables = [];
 
+// Make the Sun clickable (generous invisible hit sphere) with live distance + facts.
+const sunHit=new THREE.Mesh(new THREE.SphereGeometry(26,16,16), new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false}));
+sunHit.userData={ tag:'Star', name:'The Sun' }; sunGroup.add(sunHit); pickables.push(sunHit);
+function sunDistAU(date){ const dd=date.getTime()/86400000+2440587.5-2451545.0, g=(357.529+0.98560028*dd)*Math.PI/180; return 1.00014 - 0.01671*Math.cos(g) - 0.00014*Math.cos(2*g); }
+function sunInfo(date){ const au=sunDistAU(date);
+  return { tag:'Star', name:'The Sun', text:'The star at the centre of our solar system — a G-type star ~4.6 billion years old that holds 99.86% of the system’s mass. Currently ~'+fmt(Math.round(au*AU_MI))+' mi ('+au.toFixed(3)+' AU) away; its light takes '+lightTime(au*AU_KM/C_KMS)+' to reach Earth.' }; }
+
 // ---------- Moon (representative position) ----------
 const moonMat = new THREE.MeshPhongMaterial({ map:moonTex, shininess:2 });
 applyMap('moonbump1k.jpg', t=>{ moonMat.bumpMap=t; moonMat.bumpScale=0.006; moonMat.needsUpdate=true; });   // crater relief
@@ -1855,6 +1862,7 @@ canvas.addEventListener('click', e=>{
     const obj=meshHit.object, p=planets.find(x=> x.mesh===obj || x.mesh===obj.parent);
     if(p){ focusConstellation(null); flyToPlanet(p.def.name); }                          // planet: fly to it
     else if(obj===moon){ selection={kind:'obj',obj:moon}; selEl.textContent='The Moon'; hudDist=()=>({mi:238900,name:'The Moon'}); showInfo(moon.userData); flyToSelection(); }   // Moon: fly to it
+    else if(obj===sunHit){ selection=null; selEl.textContent='The Sun'; const d=new Date(simNow()); showInfo(sunInfo(d)); hudDist=()=>({mi:sunDistAU(new Date(simNow()))*AU_MI, name:'The Sun'}); lookAtSky(sunSceneDir(d)); }   // Sun: face it + info
     else { showInfo(obj.userData); selection=null; }                                     // other labelled body: just info
   } else if(cloudHit){
     if(selection && selection.kind==='cloud' && selection.idx===cloudHit.index) deselect();  // re-click to unselect
