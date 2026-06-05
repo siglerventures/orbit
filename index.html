@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.26">
+<meta name="app-rev" content="3.27">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -1868,21 +1868,18 @@ canvas.addEventListener('click', e=>{
   // Pick whichever is nearer the camera (a satellite point or a labelled body).
   if(meshHit && (!cloudHit || meshHit.distance<=cloudHit.distance) && meshHit.object.userData.name){
     const obj=meshHit.object;
-    let body=null, radius=0, meta=null;    // resolve which body was clicked + its info/HUD
     const p=planets.find(x=> x.mesh===obj || x.mesh===obj.parent);
-    if(p){ body=p.mesh; radius=p.def.r; meta=()=>{ focusConstellation(null); selection={kind:'obj',obj:p.mesh}; selEl.textContent=p.def.name; hudDist=()=>({mi:(p.distAU||0)*AU_MI,name:'Planet · '+p.def.name}); showInfo(p.mesh.userData); }; }
-    else if(obj===moon || obj===moonHit || obj.parent===moon){ body=moon; radius=0.273;
-      meta=()=>{ selection={kind:'obj',obj:moon}; selEl.textContent='The Moon'; hudDist=()=>({mi:238900,name:'The Moon'}); showInfo(moon.userData); }; }
-    else if(obj===sunHit){ body=sunGroup; radius=4.8;
-      meta=()=>{ selection={kind:'obj',obj:sunGroup}; selEl.textContent='The Sun'; const d=new Date(simNow()); showInfo(sunInfo(d)); hudDist=()=>({mi:sunDistAU(new Date(simNow()))*AU_MI, name:'The Sun'}); }; }
-    if(body){
-      if(focus && focus.body===body) exitFocus();              // click the focused body again -> step back out
-      else { exitFocus(); meta(); enterFocus(body, radius); }   // click a body -> fly in and orbit it (drag to spin around it)
-    } else { exitFocus(); showInfo(obj.userData); selection=null; }                         // other labelled body: just info
+    const isMoon = obj===moon || obj===moonHit || obj.parent===moon, isSun = obj===sunHit;
+    if(p || isMoon || isSun){
+      const body = p ? p.mesh : (isSun ? sunGroup : moon);
+      if(focus && focus.body===body) exitFocus();         // click the focused body again -> step back out
+      else if(p) focusPlanet(p);                          // otherwise fly in and orbit it
+      else if(isSun) focusSun(); else focusMoon();
+    } else { exitFocus(); exitRide(); showInfo(obj.userData); selection=null; }   // other labelled body: just info
   } else if(cloudHit){
     exitFocus(); exitRide();
     if(selection && selection.kind==='cloud' && selection.idx===cloudHit.index) deselect();  // re-click to unselect
-    else selectCloud(cloudHit.index, false);             // identify + mark, but don't fly on a plain click
+    else selectCloud(cloudHit.index, true);              // click a satellite -> select + zoom to it
   } else { deselect(); }                                  // empty space clears the selection (also exits focus)
 });
 
@@ -1922,6 +1919,11 @@ function exitFocus(){
   controls.target.set(0,0,0); controls.minDistance=1.04; controls.maxDistance=MAXD; controls.enableZoom=false;
   targetDist=THREE.MathUtils.clamp(camera.position.length(), MIND, MAXD); flyDir=null;
 }
+// Fly in and orbit a body (works reliably from buttons even when the body is a far dot).
+function focusBody(body, radius, meta){ exitFocus(); if(typeof exitRide==='function') exitRide(); meta(); enterFocus(body, radius); }
+function focusPlanet(p){ if(!p) return; focusBody(p.mesh, p.def.r, ()=>{ focusConstellation(null); selection={kind:'obj',obj:p.mesh}; selEl.textContent=p.def.name; hudDist=()=>({mi:(p.distAU||0)*AU_MI,name:'Planet · '+p.def.name}); showInfo(p.mesh.userData); }); }
+function focusMoon(){ focusBody(moon, 0.273, ()=>{ selection={kind:'obj',obj:moon}; selEl.textContent='The Moon'; hudDist=()=>({mi:238900,name:'The Moon'}); showInfo(moon.userData); }); }
+function focusSun(){ focusBody(sunGroup, 4.8, ()=>{ const d=new Date(simNow()); selection={kind:'obj',obj:sunGroup}; selEl.textContent='The Sun'; showInfo(sunInfo(d)); hudDist=()=>({mi:sunDistAU(new Date(simNow()))*AU_MI,name:'The Sun'}); }); }
 
 // ---------- "Ride the ISS" — lock the camera just above/behind the station ----------
 let riding=false, rideZoom=1; const _issP=new THREE.Vector3(), _issP2=new THREE.Vector3(), _issRad=new THREE.Vector3();
@@ -1956,7 +1958,7 @@ document.querySelectorAll('#nav button').forEach(b=>
     if(b.classList.contains('navhead')) return;    // group headers toggle collapse (handled separately)
     if(b.classList.contains('sky')) return;        // 🔭 Skywatch toggles handle themselves
     hideIntro(); exitFocus(); exitRide();          // leaving any locked camera mode
-    if(b.dataset.planet){ focusConstellation(null); flyToPlanet(b.dataset.planet); return; }   // planets
+    if(b.dataset.planet){ focusPlanet(planetByName(b.dataset.planet)); return; }   // planet button -> fly in and orbit it
     const key=b.dataset.track;
     setTracking(key);                           // reflect the focused constellation's count
     const shellMi=parseFloat(b.dataset.shellmi);
@@ -1976,10 +1978,10 @@ document.querySelectorAll('#nav button').forEach(b=>
     }
     focusConstellation(null);                   // clear any size boost for non-constellation presets
     if(key==='iss' && flyToISS()) return;       // ISS: fly to wherever it is right now
+    if(b.dataset.orient==='moon'){ focusMoon(); return; }   // Moon button -> fly in and orbit it
     deselect();
     if(!shellMi){ setTarget(1.28); return; }    // Surface
-    if(b.dataset.orient==='moon'){ selection={kind:'obj',obj:moon}; selEl.textContent='The Moon'; hudDist=()=>({mi:238900,name:'The Moon'}); flyDir=moon.position.clone().normalize(); showInfo(moon.userData); }   // Moon: select + fly like a planet
-    setTarget(displayRadiusAt(alt(shellMi), morphTarget) * standoff);     // Moon (or ISS fallback)
+    setTarget(displayRadiusAt(alt(shellMi), morphTarget) * standoff);     // shell standoff (ISS fallback etc.)
   }));
 
 // Scale toggle — morph between true and exaggerated, riding the camera out with
@@ -2391,7 +2393,7 @@ function tick(now){
       camera.position.lerpVectors(focus.fromPos, _camEnd, e);
       _tweenTgt.lerpVectors(focus.fromTgt, _focusTmp, e); camera.lookAt(_tweenTgt);
       if(focus.t>=1){ controls.target.copy(_focusTmp); controls.enabled=true; controls.update(); }
-    } else { controls.target.lerp(_focusTmp, 0.3); controls.update(); }   // then orbit it freely (follows it as it moves)
+    } else { controls.target.copy(_focusTmp); controls.update(); }   // then orbit it freely (pivot stays exactly on the body)
     selMarker.visible=false;
   }
   else { applyZoom(dt); controls.update(); }
