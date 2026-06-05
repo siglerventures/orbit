@@ -1908,17 +1908,17 @@ const setTarget = d => { targetDist = THREE.MathUtils.clamp(d, MIND, MAXD); };
 // ---------- Orbit-a-body focus (click a selected body again to fly in and orbit it) ----------
 // Re-targets OrbitControls onto the body so you can rotate/zoom around it and see
 // its surface, instead of always orbiting Earth. Fully reversible (exitFocus).
-let focus=null; const _focusTmp=new THREE.Vector3();
+let focus=null; const _focusTmp=new THREE.Vector3(), _tweenTgt=new THREE.Vector3(), _camEnd=new THREE.Vector3();
 function enterFocus(body, radius){
-  focus={ body, radius }; flyDir=null;
-  body.getWorldPosition(_focusTmp); controls.target.copy(_focusTmp);
-  controls.minDistance=radius*1.3; controls.maxDistance=radius*60; controls.enableZoom=true;
+  body.getWorldPosition(_focusTmp); flyDir=null;
   const dir=camera.position.clone().sub(_focusTmp); if(dir.lengthSq()<1e-9) dir.set(0,0,1);
-  camera.position.copy(_focusTmp).add(dir.setLength(radius*3.2));   // fly in to a framing distance
-  controls.update();
+  // tween state: ease the camera in to a framing distance + swing the look-target onto the body
+  focus={ body, radius, t:0, fromPos:camera.position.clone(), fromTgt:controls.target.clone(), offset:dir.setLength(radius*3.2) };
+  controls.minDistance=radius*1.3; controls.maxDistance=radius*60; controls.enableZoom=true; controls.enabled=false;
 }
 function exitFocus(){
   if(!focus) return; focus=null;
+  controls.enabled=true;
   controls.target.set(0,0,0); controls.minDistance=1.04; controls.maxDistance=MAXD; controls.enableZoom=false;
   targetDist=THREE.MathUtils.clamp(camera.position.length(), MIND, MAXD); flyDir=null;
 }
@@ -2382,7 +2382,18 @@ function tick(now){
   for(const lbl of skyLabels){ lbl.visible = !!(lbl.parent && lbl.parent.visible) && !occludedByEarth(lbl); }
   updateSelection();
   if(riding){ updateRide(date); selMarker.visible=false; }                                       // locked to the ISS
-  else if(focus){ focus.body.getWorldPosition(_focusTmp); controls.target.lerp(_focusTmp, 0.3); selMarker.visible=false; controls.update(); }   // orbit the focused body (follows it as it moves)
+  else if(focus){
+    focus.body.getWorldPosition(_focusTmp);
+    if(focus.t<1){                                   // eased fly-in (no jarring teleport)
+      focus.t=Math.min(1, focus.t + dt/0.6);
+      const e=1-Math.pow(1-focus.t,3);
+      _camEnd.copy(_focusTmp).add(focus.offset);
+      camera.position.lerpVectors(focus.fromPos, _camEnd, e);
+      _tweenTgt.lerpVectors(focus.fromTgt, _focusTmp, e); camera.lookAt(_tweenTgt);
+      if(focus.t>=1){ controls.target.copy(_focusTmp); controls.enabled=true; controls.update(); }
+    } else { controls.target.lerp(_focusTmp, 0.3); controls.update(); }   // then orbit it freely (follows it as it moves)
+    selMarker.visible=false;
+  }
   else { applyZoom(dt); controls.update(); }
   // HUD readout: whatever is selected shows ITS distance from Earth; else camera altitude.
   const hf = hudDist && hudDist();
