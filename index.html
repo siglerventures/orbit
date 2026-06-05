@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.16">
+<meta name="app-rev" content="3.17">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -325,6 +325,7 @@ document.addEventListener('DOMContentLoaded', function(){
     <button class="exrow" data-ex="high"><span class="exk">🛰️ Farthest out</span><span class="exv" id="ex-high">—</span></button>
     <button class="exrow" data-ex="fast"><span class="exk">⚡ Fastest</span><span class="exv" id="ex-fast">—</span></button>
     <button class="exrow" data-ex="rand"><span class="exk">🎲 Random satellite</span><span class="exv">surprise me</span></button>
+    <button class="exrow" data-ex="eclipse"><span class="exk">🌒 Next eclipse</span><span class="exv" id="ex-eclipse">—</span></button>
   </div>
 
   <button id="passBtn" title="Satellite passes over your location" aria-label="Satellite passes over your location">📍</button>
@@ -800,6 +801,39 @@ const galacticCenterDir=new THREE.Vector3(0,0,1);
   }
   mwGroup.add(starPoints(pos,col,siz));
 })();
+
+// ---------- The Sun (visible glowing disk in its true sky direction) ----------
+const SUN_R = STAR_R*0.96, sunGroup = new THREE.Group(); scene.add(sunGroup);
+sunGroup.add(new THREE.Mesh(new THREE.SphereGeometry(4.8,24,24), new THREE.MeshBasicMaterial({ color:0xfff3c8 })));
+{ const glow=new THREE.Sprite(new THREE.SpriteMaterial({ map:STAR_TEX, color:0xffcf72, transparent:true, opacity:0.85, blending:THREE.AdditiveBlending, depthWrite:false })); glow.scale.set(52,52,1); sunGroup.add(glow);
+  const core=new THREE.Sprite(new THREE.SpriteMaterial({ map:STAR_TEX, color:0xfff3d0, transparent:true, opacity:0.8, blending:THREE.AdditiveBlending, depthWrite:false })); core.scale.set(18,18,1); sunGroup.add(core); }
+function updateSun(date){ sunGroup.position.copy(sunSceneDir(date)).multiplyScalar(SUN_R); }
+updateSun(new Date());
+
+// ---------- Eclipse finder: scan for the next solar/lunar alignment ----------
+const _ecN=new THREE.Vector3();
+function nextEclipse(fromMs){
+  const step=2*3600000, end=fromMs+800*86400000;   // search ~2.2 years ahead
+  for(let t=fromMs+3600000; t<end; t+=step){
+    const d=new Date(t), m=moonSceneDir(d), s=sunSceneDir(d);
+    const solar=m.angleTo(s)*180/Math.PI, lunar=m.angleTo(_ecN.copy(s).multiplyScalar(-1))*180/Math.PI;
+    if(solar<1.6 || lunar<1.05){
+      const type = solar<1.6 ? 'solar' : 'lunar';
+      let bt=t, bsep=type==='solar'?solar:lunar;
+      for(let u=t-step*2; u<=t+step*2; u+=300000){       // refine to the minimum separation
+        const dd=new Date(u), mm=moonSceneDir(dd), ss=sunSceneDir(dd);
+        const sep = type==='solar' ? mm.angleTo(ss)*180/Math.PI : mm.angleTo(_ecN.copy(ss).multiplyScalar(-1))*180/Math.PI;
+        if(sep<bsep){ bsep=sep; bt=u; }
+      }
+      return { type, time:bt, sep:bsep };
+    }
+  }
+  return null;
+}
+function eclipseName(e){
+  if(e.type==='solar') return (e.sep<0.5?'Total/annular':'Partial')+' solar eclipse';
+  return (e.sep<0.45?'Total':'Partial')+' lunar eclipse';
+}
 
 let starField=null;
 function buildFallbackStars(){
@@ -1874,10 +1908,27 @@ document.getElementById('exploreBtn').addEventListener('click', ()=>{
   document.getElementById('ex-low').textContent  = exData.lo ? exName(exData.lo.i)+' · '+fmt(Math.max(0,exData.lo.v))+' mi'  : 'no data yet';
   document.getElementById('ex-high').textContent = exData.hi ? exName(exData.hi.i)+' · '+fmt(exData.hi.v)+' mi'             : 'no data yet';
   document.getElementById('ex-fast').textContent = exData.fa ? exName(exData.fa.i)+' · '+fmt(exData.fa.v)+' mph'            : 'no data yet';
+  const ecl=nextEclipse(simNow());   // next solar/lunar eclipse
+  document.getElementById('ex-eclipse').textContent = ecl ? (eclipseName(ecl)+' · '+new Date(ecl.time).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'})) : 'none found';
   explorePanel.classList.add('show');
 });
+function setSpeed(mult){   // jump to a speed and reflect it on the buttons
+  simEpoch=simNow(); wallEpoch=performance.now(); speed=mult;
+  document.querySelectorAll('#speed button').forEach(x=>x.classList.toggle('active', parseFloat(x.dataset.mult)===mult));
+}
+function jumpToNextEclipse(){
+  const e=nextEclipse(simNow()); if(!e){ return; }
+  simEpoch = e.time - 25*60000; wallEpoch=performance.now();   // start ~25 min before peak
+  setSpeed(600);                                               // run fast enough to watch it unfold
+  const d=new Date(e.time);
+  lookAtSky(e.type==='solar' ? sunSceneDir(d) : moonSceneDir(d));   // face the Sun (solar) / Moon (lunar)
+  showInfo({ tag:'Eclipse', name:eclipseName(e),
+    text:(e.type==='solar' ? 'The Moon passes in front of the Sun' : 'The Moon passes through Earth’s shadow')
+      +' on '+d.toUTCString()+'. Jumped the clock here at 600× — watch it line up (orbit to frame the Sun/Moon).' });
+}
 explorePanel.querySelectorAll('.exrow').forEach(row=>row.addEventListener('click', ()=>{
   const kind=row.dataset.ex; let idx=-1;
+  if(kind==='eclipse'){ jumpToNextEclipse(); explorePanel.classList.remove('show'); return; }
   if(kind==='low'  && exData.lo) idx=exData.lo.i;
   else if(kind==='high' && exData.hi) idx=exData.hi.i;
   else if(kind==='fast' && exData.fa) idx=exData.fa.i;
@@ -2032,7 +2083,20 @@ async function ipLocate(){
   }
   return null;
 }
-function useLatLon(la, lo){ observerGd={ longitude:lo*Math.PI/180, latitude:la*Math.PI/180, height:0.1 }; }
+// A pin on the globe at the visitor's location (child of earthGroup, so it rotates
+// with the Earth). Earth-fixed coords -> scene-local (same axis map as ECI->scene).
+let locPin=null, locPinLabel=null;
+function placeLocationPin(lat, lon){
+  const phi=lat*Math.PI/180, lam=lon*Math.PI/180, cp=Math.cos(phi);
+  if(!locPin){
+    locPin=new THREE.Mesh(new THREE.SphereGeometry(0.016,12,12), new THREE.MeshBasicMaterial({ color:0x4ea3ff }));
+    earthGroup.add(locPin);
+    const el=document.createElement('div'); el.className='sat-label'; el.textContent='📍 You';
+    locPinLabel=new CSS2DObject(el); locPinLabel.position.set(0,0.05,0); locPin.add(locPinLabel);
+  }
+  locPin.position.set(cp*Math.cos(lam), Math.sin(phi), -cp*Math.sin(lam)).multiplyScalar(1.004);
+}
+function useLatLon(la, lo){ observerGd={ longitude:lo*Math.PI/180, latitude:la*Math.PI/180, height:0.1 }; placeLocationPin(la, lo); }
 async function fallbackLocate(why){
   passStat.textContent='Trying approximate location…'; passList.innerHTML='';
   const loc=await ipLocate();
@@ -2112,6 +2176,8 @@ function tick(now){
   if(now-lastPlanetUpd > (speed>=600?0:2500)){ updatePlanets(date); moonDir.copy(moonSceneDir(date)); lastPlanetUpd=now; }   // planets + Moon (refresh every frame when sped up so motion is smooth)
   if(now-lastSkyUpd>2000){ updateShowers(); updateComets(); lastSkyUpd=now; }   // refresh active showers + comet positions
   updateMeteors(dt);   // animate shooting meteors (real-time)
+  updateSun(date);     // keep the Sun in its true sky direction
+  if(locPinLabel) locPinLabel.visible = !occludedByEarth(locPinLabel);   // hide the "You" pin when it's on the far side
   // Show planet labels only when zoomed out toward them; hide a planet's own
   // label while it's the selected body (the selection label already names it).
   const plLabels = camera.position.length()>28;
