@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.13">
+<meta name="app-rev" content="3.14">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -771,14 +771,26 @@ function starPoints(pos,col,siz){
     transparent:true, vertexColors:true, depthWrite:false, blending:THREE.AdditiveBlending });
   return new THREE.Points(g,m);
 }
-// Real catalogs stop ~mag 6 and don't show the Milky Way — keep a faint haze band.
+// Milky Way band — aligned to the REAL galactic plane (galactic→equatorial→scene),
+// brighter and wider toward the galactic centre (Sagittarius) for a glowing band.
 (function milkyWay(){
-  const N=2600,R=STAR_R*1.0015,pos=new Float32Array(N*3),col=new Float32Array(N*3),siz=new Float32Array(N);
+  // eq = Aᵀ·gal : galactic unit vector -> equatorial, then -> scene (x,z,-y)
+  const M=[-0.0548756,0.4941094,-0.8676661, -0.8734371,-0.4448296,-0.1980764, -0.4838350,0.7469822,0.4559838];
+  const g2s=(l,b)=>{ const cb=Math.cos(b), xg=cb*Math.cos(l), yg=cb*Math.sin(l), zg=Math.sin(b);
+    const xe=M[0]*xg+M[1]*yg+M[2]*zg, ye=M[3]*xg+M[4]*yg+M[5]*zg, ze=M[6]*xg+M[7]*yg+M[8]*zg;
+    return [xe, ze, -ye]; };
+  const N=6500, R=STAR_R*1.0015, pos=new Float32Array(N*3), col=new Float32Array(N*3), siz=new Float32Array(N);
   for(let i=0;i<N;i++){
-    const u=(Math.random()*2-1)*0.13,th=Math.random()*Math.PI*2,s=Math.sqrt(1-u*u);
-    const x=s*Math.cos(th),y=u,z=s*Math.sin(th),ty=y*0.92-z*0.39,tz=y*0.39+z*0.92;
-    pos[i*3]=x*R;pos[i*3+1]=ty*R;pos[i*3+2]=tz*R;
-    const b=0.10+Math.random()*0.16; col[i*3]=b*0.92;col[i*3+1]=b*0.96;col[i*3+2]=b; siz[i]=0.8+Math.random()*1.6;
+    const l=Math.random()*Math.PI*2;
+    const toCentre=Math.cos(l)*0.5+0.5;                          // 1 at galactic centre, 0 opposite
+    const width=0.045+0.11*toCentre;                            // band thickens toward the bulge
+    const b=(Math.random()+Math.random()+Math.random()-1.5)*width;   // ~gaussian about the plane
+    const v=g2s(l,b);
+    pos[i*3]=v[0]*R; pos[i*3+1]=v[1]*R; pos[i*3+2]=v[2]*R;
+    const core=Math.exp(-(b*b)/(2*width*width));
+    const br=(0.05+0.24*toCentre)*(0.45+0.55*core)*(0.6+0.4*Math.random());
+    col[i*3]=br; col[i*3+1]=br*0.95; col[i*3+2]=br*0.83;        // warm tan dust glow
+    siz[i]=0.7+Math.random()*1.9;
   }
   scene.add(starPoints(pos,col,siz));
 })();
@@ -1120,10 +1132,16 @@ const _mtA=new THREE.Vector3(), _mt1=new THREE.Vector3(), _mt2=new THREE.Vector3
     meteors.push({ line, mat, g, active:false });
   }
 })();
+function meteorInterval(){    // gap between meteors, scaled by real ZHR of active showers
+  const now=new Date(); let z=0; for(const s of SHOWERS) if(showerActive(s,now)) z+=s.zhr;
+  const perSec=0.05 + z*0.02;   // sporadic baseline + active rate (ZHR 150 → bursts; nothing active → ~1/15s)
+  return (0.6+Math.random()*0.9)/perSec;
+}
 function spawnMeteor(){
   const m=meteors.find(x=>!x.active); if(!m) return;
-  const now=new Date(); let pool=SHOWERS.filter(s=>showerActive(s,now)); if(!pool.length) pool=SHOWERS;
-  const s=pool[(Math.random()*pool.length)|0];
+  const now=new Date(); const act=SHOWERS.filter(s=>showerActive(s,now)), pool=act.length?act:SHOWERS;
+  let tot=0; for(const x of pool) tot+=x.zhr; let r=Math.random()*tot, s=pool[0];
+  for(const x of pool){ r-=x.zhr; if(r<=0){ s=x; break; } }   // pick a radiant weighted by its rate
   const R=raDecVec(s.ra,s.dec,1).normalize();
   const up=Math.abs(R.y)<0.9 ? _mtA.set(0,1,0) : _mtA.set(1,0,0);
   const t1=up.clone().cross(R).normalize(), t2=R.clone().cross(t1).normalize();
@@ -1135,7 +1153,7 @@ function spawnMeteor(){
 function updateMeteors(dt){
   meteorGroup.visible = showerGroup.visible;
   if(!showerGroup.visible) return;
-  meteorTimer-=dt; if(meteorTimer<=0){ spawnMeteor(); meteorTimer=0.12+Math.random()*0.5; }
+  meteorTimer-=dt; if(meteorTimer<=0){ spawnMeteor(); meteorTimer=meteorInterval(); }
   for(const m of meteors){
     if(!m.active) continue;
     m.life+=dt; const f=m.life/m.maxLife;
@@ -1172,6 +1190,12 @@ const COMETS=[
     fact:'Has the shortest known orbital period of any comet — about 3.3 years.' },
   { name:'67P/Churyumov–Gerasimenko', q:1.2104, e:0.6405, i:7.040, om:50.147, w:12.780, Tp:2459521.5,
     fact:"Target of ESA's Rosetta mission, which landed Philae on its surface in 2014." },
+  { name:'109P/Swift–Tuttle', q:0.9595, e:0.9632, i:113.454, om:139.381, w:152.982, Tp:2448968.5,
+    fact:'The parent of the Perseid meteor shower; a large comet on a ~133-year orbit. Last seen 1992.' },
+  { name:'55P/Tempel–Tuttle', q:0.9764, e:0.9056, i:162.486, om:235.270, w:172.500, Tp:2450872.5,
+    fact:'The parent of the Leonid meteor shower, returning about every 33 years (next ~2031).' },
+  { name:'21P/Giacobini–Zinner', q:1.0132, e:0.7060, i:31.991, om:195.395, w:172.808, Tp:2460215.0,
+    fact:'The parent of the Draconid meteor shower; orbits the Sun about every 6.6 years.' },
 ];
 function cometHelio(c, JD){          // heliocentric ecliptic position (AU)
   const a=c.q/(1-c.e), n=KGAUSS/Math.pow(a,1.5);
@@ -1210,9 +1234,10 @@ const _cAxis=new THREE.Vector3(), _cQ=new THREE.Quaternion(), _cTv=new THREE.Vec
     const lbl=new CSS2DObject(el); cometGroup.add(lbl); item.lbl=lbl; skyLabels.push(lbl);
     cometItems.push(item);
   });
-  // glowing coma (head)
+  // glowing coma (head) — fiery ball: orange halo + hot white-yellow core
   const g=new THREE.BufferGeometry(); cometPosAttr=new THREE.BufferAttribute(pos,3); g.setAttribute('position', cometPosAttr);
-  cometGroup.add(new THREE.Points(g, new THREE.PointsMaterial({ color:0xcaf2ff, size:18, sizeAttenuation:false, map:STAR_TEX, transparent:true, depthWrite:false, blending:THREE.AdditiveBlending })));
+  cometGroup.add(new THREE.Points(g, new THREE.PointsMaterial({ color:0xff7a26, size:34, sizeAttenuation:false, map:STAR_TEX, transparent:true, opacity:0.8, depthWrite:false, blending:THREE.AdditiveBlending })));
+  cometGroup.add(new THREE.Points(g, new THREE.PointsMaterial({ color:0xfff0c0, size:15, sizeAttenuation:false, map:STAR_TEX, transparent:true, depthWrite:false, blending:THREE.AdditiveBlending })));
   // tail: a fan of points curving away from the Sun, fading to the tip
   const n=COMETS.length*COMET_TAILN;
   cTailPos=new Float32Array(n*3); cTailCol=new Float32Array(n*3); cTailSiz=new Float32Array(n);
@@ -1234,8 +1259,8 @@ function updateComets(){
       _cTv.copy(head).applyQuaternion(_cQ).multiplyScalar(SKY_R*0.984);
       const b=idx*COMET_TAILN+k, br=1-frac;
       cTailPos[b*3]=_cTv.x; cTailPos[b*3+1]=_cTv.y; cTailPos[b*3+2]=_cTv.z;
-      cTailCol[b*3]=br*0.62; cTailCol[b*3+1]=br*0.9; cTailCol[b*3+2]=br;
-      cTailSiz[b]=br*28+3;
+      cTailCol[b*3]=br*1.0; cTailCol[b*3+1]=br*0.55; cTailCol[b*3+2]=br*0.18;   // fiery orange tail, fading to the tip
+      cTailSiz[b]=br*30+3;
     }
   });
   cometPosAttr.needsUpdate=true;
@@ -1297,7 +1322,12 @@ function toggleSky(btn, group, onEnable){
 }
 document.getElementById('sky-const').addEventListener('click', function(){ toggleSky(this, constGroup); });
 document.getElementById('sky-showers').addEventListener('click', function(){ toggleSky(this, showerGroup, updateShowers); });
-document.getElementById('sky-comets').addEventListener('click', function(){ toggleSky(this, cometGroup, updateComets); });
+function nearestComet(){ const date=new Date(simNow()); let best=COMETS[0], bd=1e9; for(const c of COMETS){ const d=cometGeo(c,date).distAU; if(d<bd){ bd=d; best=c; } } return best; }
+document.getElementById('sky-comets').addEventListener('click', function(){
+  if(cometGroup.visible){ toggleSky(this, cometGroup); return; }   // turning the layer off
+  toggleSky(this, cometGroup, updateComets);                       // turning on…
+  selectComet(nearestComet());                                     // …and fly to the closest comet so it's easy to find
+});
 
 // ---------- Live satellites ----------
 // The ISS is tracked exactly on the main thread (single sat, with its trail).
