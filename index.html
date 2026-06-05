@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.14">
+<meta name="app-rev" content="3.15">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -46,7 +46,9 @@ document.addEventListener('DOMContentLoaded', function(){
   :root { --fg:#e9f1fb; --muted:#9fb3cc; --accent:#4ea3ff; --amber:#f2b65a; }
   * { box-sizing:border-box; }
   html,body { margin:0; height:100%; background:#05070d; overflow:hidden;
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; color:var(--fg); }
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; color:var(--fg);
+    -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; }
+  input,textarea { -webkit-user-select:text; user-select:text; }   /* keep the search box selectable */
   #scene { position:fixed; inset:0; display:block; }
 
   .panel { position:fixed; background:rgba(10,16,28,0.55); backdrop-filter:blur(10px);
@@ -364,6 +366,7 @@ document.addEventListener('DOMContentLoaded', function(){
         <button class="sky" id="sky-const" data-tip="Toggle the major constellation star patterns on the celestial sphere.">Constellations</button>
         <button class="sky" id="sky-showers" data-tip="Toggle annual meteor shower radiants — active showers glow; labels show the next peak date.">Meteor showers</button>
         <button class="sky" id="sky-comets" data-tip="Toggle notable comets at their live computed sky positions.">Comets</button>
+        <button class="sky" id="sky-milkyway" data-tip="Show the Milky Way band and fly to the galactic centre.">Milky Way</button>
       </div>
     </div>
   </div>
@@ -772,27 +775,30 @@ function starPoints(pos,col,siz){
   return new THREE.Points(g,m);
 }
 // Milky Way band — aligned to the REAL galactic plane (galactic→equatorial→scene),
-// brighter and wider toward the galactic centre (Sagittarius) for a glowing band.
+// brighter and wider toward the galactic centre (Sagittarius). A toggleable Skywatch
+// layer (off by default); its button flies you to the galactic centre to see it.
+const mwGroup=new THREE.Group(); mwGroup.visible=false; scene.add(mwGroup);
+const galacticCenterDir=new THREE.Vector3(0,0,1);
 (function milkyWay(){
-  // eq = Aᵀ·gal : galactic unit vector -> equatorial, then -> scene (x,z,-y)
   const M=[-0.0548756,0.4941094,-0.8676661, -0.8734371,-0.4448296,-0.1980764, -0.4838350,0.7469822,0.4559838];
   const g2s=(l,b)=>{ const cb=Math.cos(b), xg=cb*Math.cos(l), yg=cb*Math.sin(l), zg=Math.sin(b);
     const xe=M[0]*xg+M[1]*yg+M[2]*zg, ye=M[3]*xg+M[4]*yg+M[5]*zg, ze=M[6]*xg+M[7]*yg+M[8]*zg;
     return [xe, ze, -ye]; };
-  const N=6500, R=STAR_R*1.0015, pos=new Float32Array(N*3), col=new Float32Array(N*3), siz=new Float32Array(N);
+  galacticCenterDir.set(...g2s(0,0)).normalize();
+  const N=7000, R=STAR_R*1.0015, pos=new Float32Array(N*3), col=new Float32Array(N*3), siz=new Float32Array(N);
   for(let i=0;i<N;i++){
     const l=Math.random()*Math.PI*2;
-    const toCentre=Math.cos(l)*0.5+0.5;                          // 1 at galactic centre, 0 opposite
-    const width=0.045+0.11*toCentre;                            // band thickens toward the bulge
-    const b=(Math.random()+Math.random()+Math.random()-1.5)*width;   // ~gaussian about the plane
+    const toCentre=Math.cos(l)*0.5+0.5;
+    const width=0.045+0.11*toCentre;
+    const b=(Math.random()+Math.random()+Math.random()-1.5)*width;
     const v=g2s(l,b);
     pos[i*3]=v[0]*R; pos[i*3+1]=v[1]*R; pos[i*3+2]=v[2]*R;
     const core=Math.exp(-(b*b)/(2*width*width));
-    const br=(0.05+0.24*toCentre)*(0.45+0.55*core)*(0.6+0.4*Math.random());
-    col[i*3]=br; col[i*3+1]=br*0.95; col[i*3+2]=br*0.83;        // warm tan dust glow
-    siz[i]=0.7+Math.random()*1.9;
+    const br=(0.16+0.55*toCentre)*(0.5+0.5*core)*(0.6+0.4*Math.random());   // brighter so it reads against the stars
+    col[i*3]=br; col[i*3+1]=br*0.95; col[i*3+2]=br*0.82;
+    siz[i]=1.0+Math.random()*2.4;
   }
-  scene.add(starPoints(pos,col,siz));
+  mwGroup.add(starPoints(pos,col,siz));
 })();
 
 let starField=null;
@@ -1328,6 +1334,17 @@ document.getElementById('sky-comets').addEventListener('click', function(){
   toggleSky(this, cometGroup, updateComets);                       // turning on…
   selectComet(nearestComet());                                     // …and fly to the closest comet so it's easy to find
 });
+document.getElementById('sky-milkyway').addEventListener('click', function(){
+  if(mwGroup.visible){ toggleSky(this, mwGroup); return; }         // turn off
+  toggleSky(this, mwGroup); lookAtSky(galacticCenterDir);          // turn on + fly to the galactic centre
+});
+// Reset every Skywatch layer (used by Home).
+function resetSkywatch(){
+  [[constGroup,'sky-const'],[showerGroup,'sky-showers'],[cometGroup,'sky-comets'],[mwGroup,'sky-milkyway']].forEach(([g,id])=>{
+    g.visible=false; const b=document.getElementById(id); if(b) b.classList.remove('active');
+  });
+  if(typeof highlightConst==='function') highlightConst(null);
+}
 
 // ---------- Live satellites ----------
 // The ISS is tracked exactly on the main thread (single sat, with its trail).
@@ -1682,7 +1699,10 @@ canvas.addEventListener('click', e=>{
   }
   // Pick whichever is nearer the camera (a satellite point or a labelled body).
   if(meshHit && (!cloudHit || meshHit.distance<=cloudHit.distance) && meshHit.object.userData.name){
-    showInfo(meshHit.object.userData); selection=null;   // labelled body: clear sat selection marker
+    const obj=meshHit.object, p=planets.find(x=> x.mesh===obj || x.mesh===obj.parent);
+    if(p){ focusConstellation(null); flyToPlanet(p.def.name); }                          // planet: fly to it
+    else if(obj===moon){ selection={kind:'obj',obj:moon}; selEl.textContent='The Moon'; showInfo(moon.userData); flyToSelection(); }   // Moon: fly to it
+    else { showInfo(obj.userData); selection=null; }                                     // other labelled body: just info
   } else if(cloudHit){
     if(selection && selection.kind==='cloud' && selection.idx===cloudHit.index) deselect();  // re-click to unselect
     else selectCloud(cloudHit.index, false);             // identify + mark, but don't fly on a plain click
@@ -1798,7 +1818,9 @@ document.querySelectorAll('#speed button').forEach(b=>b.addEventListener('click'
 const HOME_POS=new THREE.Vector3(0,0.5,2.6);
 document.getElementById('homeBtn').addEventListener('click', ()=>{
   deselect();                          // clear selection + info card
-  focusConstellation(null);            // drop any constellation size boost
+  focusConstellation(null);            // drop any constellation size boost / isolation
+  resetSkywatch();                     // turn off constellations / showers / comets / Milky Way + clear highlight
+  document.querySelectorAll('#nav .navgroup').forEach(g=>g.classList.add('collapsed'));   // collapse groups like first load
   setTracking('all');                  // Tracking back to the full live total
   if(morphTarget){                     // scale back to True
     morphTarget=0; morphActive=true;
@@ -2100,8 +2122,16 @@ function tick(now){
   for(const lbl of skyLabels){ lbl.visible = !!(lbl.parent && lbl.parent.visible) && !occludedByEarth(lbl); }
   updateSelection();
   applyZoom(dt); controls.update();
-  const mi=(trueFromDisplay(camera.position.length())-1)*EARTH_MI;   // HUD always reports true altitude
-  altVal.textContent=fmt(Math.max(0,mi))+' mi'; regionVal.textContent=region(Math.max(0,mi));
+  // HUD readout: a selected planet/Moon shows ITS distance from Earth; otherwise camera altitude.
+  let hudMi=null, hudRegion=null;
+  if(selection && selection.kind==='obj'){
+    const sp=planets.find(x=>x.mesh===selection.obj);
+    if(sp && sp.distAU!=null){ hudMi=sp.distAU*AU_KM/MI_KM; hudRegion='Planet · '+sp.def.name; }
+    else if(selection.obj===moon){ hudMi=238900; hudRegion='The Moon'; }
+  }
+  if(hudMi!=null){ altVal.textContent=fmt(Math.round(hudMi))+' mi'; regionVal.textContent=hudRegion; }
+  else { const mi=(trueFromDisplay(camera.position.length())-1)*EARTH_MI;   // HUD reports true altitude
+    altVal.textContent=fmt(Math.max(0,mi))+' mi'; regionVal.textContent=region(Math.max(0,mi)); }
   timeVal.textContent=date.toISOString().substr(11,8);
   if(composer) composer.render(); else renderer.render(scene,camera);
   labelRenderer.render(scene,camera);
