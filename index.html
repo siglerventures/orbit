@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.17">
+<meta name="app-rev" content="3.18">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -368,6 +368,7 @@ document.addEventListener('DOMContentLoaded', function(){
         <button class="sky" id="sky-showers" data-tip="Toggle annual meteor shower radiants — active showers glow; labels show the next peak date.">Meteor showers</button>
         <button class="sky" id="sky-comets" data-tip="Toggle notable comets at their live computed sky positions.">Comets</button>
         <button class="sky" id="sky-milkyway" data-tip="Show the Milky Way band and fly to the galactic centre.">Milky Way</button>
+        <button class="sky" id="sky-asteroids" data-tip="Show the asteroid belt along the ecliptic plus named asteroids; flies to the nearest one.">Asteroids</button>
       </div>
     </div>
   </div>
@@ -968,8 +969,11 @@ const PLANET_DEFS=[
   { name:'Mercury', color:0xb9a89a, r:0.9, tex:'mercurymap.jpg', fact:'The smallest planet and the closest to the Sun.' },
   { name:'Venus',   color:0xe6cd8a, r:1.5, tex:'venusmap.jpg',   fact:'The hottest planet, wrapped in a thick CO₂ atmosphere.' },
   { name:'Mars',    color:0xe2683b, r:1.1, tex:'marsmap1k.jpg',  fact:'The Red Planet — home to Olympus Mons, the tallest volcano known.' },
-  { name:'Jupiter', color:0xd9a066, r:3.0, tex:'jupitermap.jpg', fact:'The largest planet; the Great Red Spot is a storm wider than Earth.' },
-  { name:'Saturn',  color:0xe7d4a0, r:2.6, tex:'saturnmap.jpg',  ring:true, fact:'The ringed gas giant, famous for its spectacular ring system.' },
+  { name:'Jupiter', color:0xd9a066, r:3.0, tex:'jupitermap.jpg', fact:'The largest planet; the Great Red Spot is a storm wider than Earth.',
+    moons:[ { name:'Io',orbR:4.3,period:1.769,r:0.16,color:0xe8d98a }, { name:'Europa',orbR:5.6,period:3.551,r:0.14,color:0xcfc4a8 },
+            { name:'Ganymede',orbR:7.6,period:7.155,r:0.21,color:0x9b8f7a }, { name:'Callisto',orbR:10.4,period:16.69,r:0.20,color:0x6b6256 } ] },
+  { name:'Saturn',  color:0xe7d4a0, r:2.6, tex:'saturnmap.jpg',  ring:true, fact:'The ringed gas giant, famous for its spectacular ring system.',
+    moons:[ { name:'Titan',orbR:7.4,period:15.95,r:0.19,color:0xd9a766 } ] },
   { name:'Uranus',  color:0x9fe6ea, r:2.0, tex:'uranusmap.jpg',  fact:'An ice giant that rotates almost on its side.' },
   { name:'Neptune', color:0x5a7cf0, r:2.0, tex:'neptunemap.jpg', fact:'The windiest planet and the farthest from the Sun.' },
 ];
@@ -998,8 +1002,14 @@ for(const def of PLANET_DEFS){
   hit.userData=m.userData; m.add(hit); pickables.push(hit);
   const el=document.createElement('div'); el.className='body-label'; el.textContent=def.name;
   const lbl=new CSS2DObject(el); lbl.position.set(0,def.r+0.6,0); m.add(lbl);
+  const moonObjs=[];                               // lit moons orbiting the planet (animated by sim time)
+  if(def.moons) for(const md of def.moons){
+    const mm=new THREE.Mesh(new THREE.SphereGeometry(md.r,16,16),
+      new THREE.MeshPhongMaterial({ color:md.color, shininess:3, emissive:new THREE.Color(md.color).multiplyScalar(0.18) }));
+    m.add(mm); moonObjs.push({ mesh:mm, orbR:md.orbR, period:md.period, phase:Math.random()*Math.PI*2 });
+  }
   const btn=document.querySelector('#nav button[data-planet="'+def.name+'"]');
-  planets.push({ def, mesh:m, label:lbl, btn, sceneR:PLANET_BASE });
+  planets.push({ def, mesh:m, label:lbl, btn, sceneR:PLANET_BASE, moonObjs });
 }
 // Recompute planet directions/order/distances (called at load + periodically).
 function updatePlanets(date){
@@ -1019,6 +1029,13 @@ function updatePlanets(date){
   }
 }
 function planetByName(name){ return planets.find(p=>p.def.name===name); }
+function updatePlanetMoons(){     // animate the gas-giant moons by sim time (whirl at high speed)
+  const days=simNow()/86400000;
+  for(const p of planets){ if(!p.moonObjs) continue;
+    for(const mo of p.moonObjs){ const th=mo.phase + 2*Math.PI*days/mo.period;
+      mo.mesh.position.set(Math.cos(th)*mo.orbR, Math.sin(th)*mo.orbR*0.16, Math.sin(th)*mo.orbR); }   // slightly inclined circular orbit
+  }
+}
 
 // ===================== 🔭 Skywatch =====================
 // Constellations, meteor-shower radiants and comets, all drawn on the inertial
@@ -1372,9 +1389,62 @@ document.getElementById('sky-milkyway').addEventListener('click', function(){
   if(mwGroup.visible){ toggleSky(this, mwGroup); return; }         // turn off
   toggleSky(this, mwGroup); lookAtSky(galacticCenterDir);          // turn on + fly to the galactic centre
 });
+
+// ---------- Asteroids: a belt band along the ecliptic + named bodies (live positions) ----------
+function eclToScene(lon, lat, R){     // ecliptic (rad) -> scene vector
+  const cl=Math.cos(lat), xe=Math.cos(lon)*cl, ye=Math.sin(lon)*cl, ze=Math.sin(lat);
+  const xq=xe, yq=ye*Math.cos(PL_EPS)-ze*Math.sin(PL_EPS), zq=ye*Math.sin(PL_EPS)+ze*Math.cos(PL_EPS);
+  return new THREE.Vector3(xq, zq, -yq).multiplyScalar(R);
+}
+const ASTEROIDS=[   // q,e,i,Ω,ω,Tp — reuse the comet propagator (approximate elements)
+  { name:'1 Ceres',  q:2.5494, e:0.07839, i:10.587, om:80.272, w:73.640, Tp:2459919.5, fact:'The largest asteroid and a dwarf planet, ~940 km across, in the main belt.' },
+  { name:'4 Vesta',  q:2.1519, e:0.08872, i:7.142,  om:103.811,w:151.66, Tp:2460668.5, fact:'The brightest asteroid — occasionally just visible to the naked eye.' },
+  { name:'2 Pallas', q:2.1330, e:0.23028, i:34.925, om:172.917,w:310.87, Tp:2459440.5, fact:'One of the largest asteroids, on a steeply tilted orbit.' },
+  { name:'433 Eros', q:1.1334, e:0.2226,  i:10.828, om:304.30, w:178.82, Tp:2460000.5, fact:'A near-Earth asteroid; NASA’s NEAR Shoemaker landed on it in 2001.' },
+  { name:'99942 Apophis', q:0.7460, e:0.1914, i:3.339, om:203.96, w:126.40, Tp:2460586.5, fact:'A near-Earth asteroid that passes closer than the geostationary belt in 2029.' },
+];
+const asteroidGroup=new THREE.Group(); asteroidGroup.visible=false; scene.add(asteroidGroup);
+const astItems=[]; let astPosAttr=null;
+(function buildAsteroids(){
+  const N=600, R=SKY_R*0.97, bp=new Float32Array(N*3), bc=new Float32Array(N*3), bs=new Float32Array(N);
+  for(let i=0;i<N;i++){
+    const lon=Math.random()*Math.PI*2, lat=(Math.random()+Math.random()+Math.random()-1.5)*0.16;   // clustered near the ecliptic
+    const v=eclToScene(lon,lat,R); bp[i*3]=v.x; bp[i*3+1]=v.y; bp[i*3+2]=v.z;
+    const b=0.10+Math.random()*0.16; bc[i*3]=b; bc[i*3+1]=b*0.85; bc[i*3+2]=b*0.6; bs[i]=0.8+Math.random()*1.4;
+  }
+  asteroidGroup.add(starPoints(bp,bc,bs));
+  const pos=new Float32Array(ASTEROIDS.length*3);
+  ASTEROIDS.forEach(a=>{
+    const el=document.createElement('div'); el.className='comet-label'; el.textContent='🪨 '+a.name;
+    el.addEventListener('click', e=>{ e.stopPropagation(); selectAsteroid(a); });
+    const lbl=new CSS2DObject(el); asteroidGroup.add(lbl); skyLabels.push(lbl);
+    astItems.push({ a, lbl });
+  });
+  const g=new THREE.BufferGeometry(); astPosAttr=new THREE.BufferAttribute(pos,3); g.setAttribute('position', astPosAttr);
+  asteroidGroup.add(new THREE.Points(g, new THREE.PointsMaterial({ color:0xc9b08a, size:10, sizeAttenuation:false, map:STAR_TEX, transparent:true, depthWrite:false })));
+})();
+function asteroidInfo(a){ const g=cometGeo(a, new Date(simNow())); return { tag:'Asteroid', name:a.name, text:a.fact+' Currently ~'+g.distAU.toFixed(2)+' AU from Earth.' }; }
+function updateAsteroids(){
+  if(!asteroidGroup.visible) return;
+  const date=new Date(simNow());
+  astItems.forEach((it,idx)=>{ const v=cometGeo(it.a,date).dir.multiplyScalar(SKY_R*0.985);
+    it.lbl.position.copy(v); astPosAttr.array[idx*3]=v.x; astPosAttr.array[idx*3+1]=v.y; astPosAttr.array[idx*3+2]=v.z; });
+  astPosAttr.needsUpdate=true;
+}
+function nearestAsteroid(){ const date=new Date(simNow()); let best=ASTEROIDS[0], bd=1e9; for(const a of ASTEROIDS){ const d=cometGeo(a,date).distAU; if(d<bd){ bd=d; best=a; } } return best; }
+function selectAsteroid(a){
+  if(!asteroidGroup.visible){ asteroidGroup.visible=true; document.getElementById('sky-asteroids').classList.add('active'); }
+  updateAsteroids(); showInfo(asteroidInfo(a));
+  const it=astItems.find(x=>x.a===a); if(it && it.lbl) lookAtSky(it.lbl.position);
+}
+document.getElementById('sky-asteroids').addEventListener('click', function(){
+  if(asteroidGroup.visible){ toggleSky(this, asteroidGroup); return; }
+  toggleSky(this, asteroidGroup, updateAsteroids); selectAsteroid(nearestAsteroid());
+});
+
 // Reset every Skywatch layer (used by Home).
 function resetSkywatch(){
-  [[constGroup,'sky-const'],[showerGroup,'sky-showers'],[cometGroup,'sky-comets'],[mwGroup,'sky-milkyway']].forEach(([g,id])=>{
+  [[constGroup,'sky-const'],[showerGroup,'sky-showers'],[cometGroup,'sky-comets'],[mwGroup,'sky-milkyway'],[asteroidGroup,'sky-asteroids']].forEach(([g,id])=>{
     g.visible=false; const b=document.getElementById(id); if(b) b.classList.remove('active');
   });
   if(typeof highlightConst==='function') highlightConst(null);
@@ -2174,9 +2244,10 @@ function tick(now){
   if(groups.iss) updateGroup(groups.iss,date);
   updateCloud();
   if(now-lastPlanetUpd > (speed>=600?0:2500)){ updatePlanets(date); moonDir.copy(moonSceneDir(date)); lastPlanetUpd=now; }   // planets + Moon (refresh every frame when sped up so motion is smooth)
-  if(now-lastSkyUpd>2000){ updateShowers(); updateComets(); lastSkyUpd=now; }   // refresh active showers + comet positions
+  if(now-lastSkyUpd>2000){ updateShowers(); updateComets(); updateAsteroids(); lastSkyUpd=now; }   // refresh active showers + comet/asteroid positions
   updateMeteors(dt);   // animate shooting meteors (real-time)
   updateSun(date);     // keep the Sun in its true sky direction
+  updatePlanetMoons();
   if(locPinLabel) locPinLabel.visible = !occludedByEarth(locPinLabel);   // hide the "You" pin when it's on the far side
   // Show planet labels only when zoomed out toward them; hide a planet's own
   // label while it's the selected body (the selection label already names it).
