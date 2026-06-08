@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.27">
+<meta name="app-rev" content="3.28">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -77,6 +77,26 @@ document.addEventListener('DOMContentLoaded', function(){
     border:1px solid rgba(120,160,210,0.22); border-radius:8px; padding:7px 0; font-size:11px; cursor:pointer;
     transition:background .15s, color .15s, border-color .15s; }
   #scaleBtn.active { color:var(--fg); border-color:var(--amber); background:rgba(120,90,40,0.5); }
+  #dateBtn { width:100%; margin-top:6px; background:rgba(20,30,48,0.6); color:var(--muted);
+    border:1px solid rgba(120,160,210,0.22); border-radius:8px; padding:7px 0; font-size:11px; cursor:pointer;
+    transition:background .15s, color .15s, border-color .15s; }
+  #dateBtn:hover { color:var(--fg); border-color:var(--accent); }
+  #dateInput { width:100%; margin-top:6px; display:none; background:rgba(20,30,48,0.7); color:var(--fg);
+    border:1px solid var(--accent); border-radius:8px; padding:5px 7px; font-size:12px; color-scheme:dark; }
+  #dateInput.show { display:block; }
+  /* Guided tour */
+  #title #tourBtn { margin-top:8px; background:rgba(78,163,255,0.16); color:var(--accent);
+    border:1px solid rgba(78,163,255,0.5); border-radius:8px; padding:6px 12px; font-size:12px; cursor:pointer;
+    transition:background .15s, color .15s; }
+  #title #tourBtn:hover { background:rgba(78,163,255,0.35); color:#fff; }
+  #tourbar { position:fixed; z-index:70; bottom:78px; left:50%; transform:translateX(-50%);
+    max-width:560px; width:92vw; display:none; align-items:center; gap:12px; padding:11px 14px;
+    background:rgba(10,16,28,0.78); backdrop-filter:blur(10px); border:1px solid rgba(120,160,210,0.3);
+    border-radius:12px; box-shadow:0 6px 26px rgba(0,0,0,0.5); }
+  #tourbar.show { display:flex; }
+  #tourbar #tourcap { flex:1; font-size:14px; line-height:1.45; color:var(--fg); }
+  #tourbar #tourExit { background:none; border:none; color:var(--muted); font-size:16px; cursor:pointer; padding:2px 6px; }
+  #tourbar #tourExit:hover { color:var(--fg); }
 
   #nav { top:16px; right:16px; display:flex; flex-direction:column; gap:7px; max-height:calc(100vh - 32px); overflow-y:auto; }
   #nav button { background:rgba(20,30,48,0.6); color:var(--fg); border:1px solid rgba(120,160,210,0.22);
@@ -304,8 +324,10 @@ document.addEventListener('DOMContentLoaded', function(){
   <div id="title" class="panel">
     <h1>Earth → Orbit</h1>
     <p>Drag to rotate · scroll / pinch to zoom · tap a satellite for detail. Orbits are live, propagated from real tracking data.</p>
+    <button id="tourBtn">▶ Take a guided tour</button>
     <div id="status"><span class="dot"></span><span id="statusText">Connecting…</span></div>
   </div>
+  <div id="tourbar"><span id="tourcap"></span><button id="tourExit" title="End tour">✕</button></div>
 
   <button id="homeBtn" title="Reset view — back to the start" aria-label="Reset view">
     <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -388,6 +410,8 @@ document.addEventListener('DOMContentLoaded', function(){
       <button data-mult="86400" title="1 day per second — Moon orbits in ~27s, planets visibly move">1d/s</button>
     </div>
     <button id="scaleBtn" title="Spread the orbital shells apart so LEO, MEO and GEO are individually navigable. The altitude readout always stays true.">Scale · True</button>
+    <button id="dateBtn" title="Jump the simulation clock to any date & time">🕓 Jump to date…</button>
+    <input type="datetime-local" id="dateInput" />
   </div>
 
   <div id="info" class="panel">
@@ -2041,6 +2065,58 @@ document.querySelectorAll('#speed button').forEach(b=>b.addEventListener('click'
   simEpoch = simNow(); wallEpoch = performance.now();  // rebase so time stays continuous
   speed = parseFloat(b.dataset.mult);
 }));
+
+// ---------- Jump the sim clock to any date/time ----------
+const dateBtn=document.getElementById('dateBtn'), dateInput=document.getElementById('dateInput');
+const _pad=n=>String(n).padStart(2,'0');
+dateBtn.addEventListener('click', ()=>{
+  const d=new Date(simNow());
+  dateInput.value=d.getFullYear()+'-'+_pad(d.getMonth()+1)+'-'+_pad(d.getDate())+'T'+_pad(d.getHours())+':'+_pad(d.getMinutes());
+  dateInput.classList.add('show');
+  if(dateInput.showPicker){ try{ dateInput.showPicker(); }catch(_){} } else dateInput.focus();
+});
+dateInput.addEventListener('change', ()=>{
+  const t=new Date(dateInput.value).getTime();
+  if(!isNaN(t)){ simEpoch=t; wallEpoch=performance.now(); }   // jump there (keeps current speed)
+  dateInput.classList.remove('show');
+});
+
+// ---------- Guided cinematic tour ----------
+const TOUR=[
+  { do:()=>{ exitFocus(); if(typeof exitRide==='function') exitRide(); deselect(); setTarget(1.30); }, cap:'🌍 This is home — Earth at the surface, spinning at true sidereal time.', dwell:4500 },
+  { do:()=>{ setTarget(displayRadiusAt(alt(340), morphTarget)*2.0); }, cap:'Lifting off, out past the atmosphere into low orbit…', dwell:3800 },
+  { do:()=>{ if(flyToISS()){} }, cap:'🛰️ The International Space Station — a crewed lab ~250 mi up, lapping Earth every 92 minutes at 17,500 mph.', dwell:5200 },
+  { do:()=>{ const b=document.querySelector('#nav button[data-track="starlink"]'); if(b) b.click(); }, cap:'✨ Starlink — over 10,000 satellites beaming internet from low orbit. This is one of the largest constellations ever built.', dwell:5200 },
+  { do:()=>{ const b=document.querySelector('#nav button[data-track="gps"]'); if(b) b.click(); }, cap:'📡 GPS — navigation satellites circling 12,550 mi up in medium Earth orbit.', dwell:4600 },
+  { do:()=>{ const b=document.querySelector('#nav button[data-track="geo"]'); if(b) b.click(); }, cap:'🛰️ The geostationary belt — 22,236 mi up, where satellites hover over a fixed spot on Earth.', dwell:4600 },
+  { do:()=>{ focusMoon(); }, cap:'🌙 The Moon — our companion, a quarter-million miles away. Drag to circle it later.', dwell:5500 },
+  { do:()=>{ focusPlanet(planetByName('Jupiter')); }, cap:'🪐 Jupiter — the giant of the solar system, with its four largest moons in tow.', dwell:5500 },
+  { do:()=>{ focusSun(); }, cap:'☀️ The Sun — 93 million miles away. Its light took about 8 minutes to reach us.', dwell:5000 },
+  { do:()=>{ const o=CONSTELLATIONS.find(c=>c.name==='Orion'); if(o) selectConstellation(o); }, cap:'✦ Orion — one of dozens of constellations on the real star sphere around you.', dwell:5000 },
+  { do:()=>{ const h=document.getElementById('homeBtn'); if(h) h.click(); }, cap:'That’s the tour — now explore on your own. 🚀', dwell:4200 },
+];
+let tourActive=false, tourTimer=null, tourIdx=0;
+const tourbar=document.getElementById('tourbar'), tourcap=document.getElementById('tourcap');
+function stepTour(){
+  if(!tourActive) return;
+  if(tourIdx>=TOUR.length){ endTour(); return; }
+  const s=TOUR[tourIdx]; try{ s.do(); }catch(_){}
+  tourcap.textContent=s.cap;
+  tourTimer=setTimeout(()=>{ tourIdx++; stepTour(); }, s.dwell);
+}
+function startTour(){
+  if(tourActive) return; tourActive=true; tourIdx=0;
+  hideIntro(); tourbar.classList.add('show');
+  stepTour();
+}
+function endTour(){
+  if(!tourActive && !tourTimer) { tourbar.classList.remove('show'); return; }
+  tourActive=false; clearTimeout(tourTimer); tourTimer=null;
+  tourbar.classList.remove('show');
+}
+document.getElementById('tourBtn').addEventListener('click', startTour);
+document.getElementById('tourExit').addEventListener('click', endTour);
+canvas.addEventListener('pointerdown', ()=>{ if(tourActive) endTour(); });   // any touch of the globe ends the tour
 
 // Home / reset — glide back to the opening view and clear all the focused state.
 const HOME_POS=new THREE.Vector3(0,0.5,2.6);
