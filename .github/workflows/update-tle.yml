@@ -58,11 +58,22 @@ jobs:
               -o data/stars.json.tmp && mv data/stars.json.tmp data/stars.json || { echo "star catalog fetch failed (non-fatal)"; rm -f data/stars.json.tmp; }
           fi
 
+      - name: Fetch satellite catalog metadata (SATCAT)
+        run: |
+          # Celestrak SATCAT -> compact id->{type,owner,launch} JSON for the info cards.
+          UA="orbit-tle-sync/1.0 (+https://github.com/${GITHUB_REPOSITORY})"
+          if curl -fsS --retry 4 --retry-delay 6 -A "$UA" "https://celestrak.org/pub/satcat.csv" -o satcat.csv; then
+            python3 .github/scripts/satcat_to_json.py satcat.csv data/satcat.json || echo "satcat parse failed (non-fatal)"
+          else
+            echo "satcat fetch failed (non-fatal)"
+          fi
+          rm -f satcat.csv
+
       - name: Commit if changed
         run: |
           git config user.name  "tle-sync-bot"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/*.txt data/stars.json 2>/dev/null || true
+          git add data/*.txt data/*.json 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "No TLE changes."
           else

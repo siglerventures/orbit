@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.28">
+<meta name="app-rev" content="3.29">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -675,6 +675,7 @@ function selectCloud(idx, fly){
   hudDist=()=>({ mi:cloudAltMi(idx), name:(cloudMeta[idx]&&cloudMeta[idx].name)||'Satellite' });
   const d=describeCloud(idx);
   if(d){ showInfo(d); selEl.textContent=(cloudMeta[idx] && cloudMeta[idx].name) || d.name; }
+  if(!satcat) loadSatcat().then(()=>{ if(selection && selection.kind==='cloud' && selection.idx===idx){ const d2=describeCloud(idx); if(d2) showInfo(d2); } });   // enrich once metadata arrives
   if(fly) flyToSelection();
 }
 function describeRec(sel){
@@ -686,7 +687,7 @@ function describeRec(sel){
   const pv2=satellite.propagate(sel.satrec, new Date(t.getTime()+1000));
   let mph=0; if(pv2 && pv2.position){ eciToScene(pv2.position,_tmpB); mph=_tmpA.distanceTo(_tmpB)*EARTH_MI*3600; }
   return { tag: altMi>1500?'High orbit':'Low Earth Orbit', name:nm,
-    text:'Altitude '+fmt(Math.max(0,altMi))+' mi'+(mph?(' · '+fmt(mph)+' mph'):'')+'. Live SGP4 propagation.' };
+    text:'Altitude '+fmt(Math.max(0,altMi))+' mi'+(mph?(' · '+fmt(mph)+' mph'):'')+'. Live SGP4 propagation.'+satMeta(sel.id) };
 }
 function selectRecTLE(rec){
   let sr; try{ sr=satellite.twoline2satrec(rec.l1, rec.l2); }catch(_){ return false; }
@@ -1765,6 +1766,27 @@ function updateCloud(){
 }
 
 // Identify a clicked cloud point: live altitude + speed straight from the buffers.
+// ---------- Satellite catalog metadata (data/satcat.json: type · owner · launch) ----------
+let satcat=null, _satcatP=null;
+function loadSatcat(){
+  if(satcat) return Promise.resolve(satcat);
+  if(!_satcatP) _satcatP=fetch('data/satcat.json').then(r=>r.ok?r.json():{}).then(j=>{ satcat=j||{}; return satcat; }).catch(()=>{ satcat={}; return satcat; });
+  return _satcatP;
+}
+const SAT_OWNERS={ US:'🇺🇸 USA', PRC:'🇨🇳 China', CIS:'🇷🇺 Russia', UK:'🇬🇧 UK', FR:'🇫🇷 France', JPN:'🇯🇵 Japan', IND:'🇮🇳 India',
+  GER:'🇩🇪 Germany', ESA:'🇪🇺 ESA', CA:'🇨🇦 Canada', ITSO:'Intelsat', SES:'SES', EUTE:'Eutelsat', GLOB:'Globalstar', ORB:'ORBCOMM',
+  SKOR:'🇰🇷 S. Korea', SPN:'🇪🇸 Spain', ITA:'🇮🇹 Italy', NETH:'🇳🇱 Netherlands', LUXE:'🇱🇺 Luxembourg', AUS:'🇦🇺 Australia',
+  BRAZ:'🇧🇷 Brazil', ISRA:'🇮🇱 Israel', TURK:'🇹🇷 Turkey', UAE:'🇦🇪 UAE', O3B:'O3b', STCT:'🇸🇬 Singapore', ARGN:'🇦🇷 Argentina', GLBL:'Globalstar' };
+const SAT_TYPES={ PAY:'Payload', 'R/B':'Rocket body', DEB:'Debris', UNK:'Unknown' };
+function satMeta(id){
+  if(!satcat || id==null) return '';
+  const m=satcat[String(id)]; if(!m) return '';
+  const parts=[];
+  if(m.t) parts.push(SAT_TYPES[m.t]||m.t);
+  if(m.o) parts.push(SAT_OWNERS[m.o]||m.o);
+  if(m.l) parts.push('launched '+m.l);
+  return parts.length ? ' — '+parts.join(' · ')+'.' : '';
+}
 function describeCloud(idx){
   const m=cloudMeta[idx]; if(!m) return null;
   let altMi=0, mph=0;
@@ -1778,7 +1800,7 @@ function describeCloud(idx){
     }
   }
   return { tag:m.tag, name:m.name+(m.id?(' · NORAD '+m.id):''),
-    text:'Altitude '+fmt(Math.max(0,altMi))+' mi'+(mph?(' · '+fmt(mph)+' mph'):'')+'. Live SGP4 propagation.' };
+    text:'Altitude '+fmt(Math.max(0,altMi))+' mi'+(mph?(' · '+fmt(mph)+' mph'):'')+'. Live SGP4 propagation.'+satMeta(m.id) };
 }
 
 let liveReady=false;
@@ -2486,6 +2508,7 @@ function tick(now){
 
 manager.onLoad=()=>{ document.getElementById('loader').classList.add('hide'); };
 loadSatellites();
+loadSatcat();   // warm the satellite-metadata cache so info cards are enriched on first click
 requestAnimationFrame(tick);
 
 addEventListener('resize',()=>{
