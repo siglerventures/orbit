@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.30">
+<meta name="app-rev" content="3.31">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -99,6 +99,33 @@ document.addEventListener('DOMContentLoaded', function(){
     background:rgba(10,16,28,0.78); backdrop-filter:blur(10px); border:1px solid rgba(120,160,210,0.3);
     border-radius:12px; box-shadow:0 6px 26px rgba(0,0,0,0.5); }
   #tourbar.show { display:flex; }
+  /* Stellar diorama */
+  #diorama { position:fixed; inset:0; z-index:75; display:none; pointer-events:none; }
+  #diorama.show { display:block; }
+  #dioVignette { position:absolute; inset:0; pointer-events:none;
+    background:radial-gradient(120% 95% at 50% 38%, rgba(0,0,0,0) 52%, rgba(0,0,0,0.5) 100%),
+      linear-gradient(to bottom, rgba(0,0,0,0.28) 0%, rgba(0,0,0,0) 22%, rgba(0,0,0,0) 55%, rgba(2,4,10,0.82) 100%); }
+  #dioCard { position:absolute; left:0; right:0; bottom:0; pointer-events:auto;
+    padding:22px 26px calc(28px + env(safe-area-inset-bottom)); max-width:680px; margin:0 auto; text-align:center; }
+  #dioCard .tag { display:inline-block; font-size:11px; letter-spacing:1.5px; text-transform:uppercase;
+    color:var(--accent); border:1px solid rgba(120,170,255,0.4); border-radius:20px; padding:3px 12px; margin-bottom:9px; }
+  #dioName { margin:0 0 8px; font-size:30px; font-weight:600; letter-spacing:.5px;
+    text-shadow:0 2px 22px rgba(0,0,0,0.9), 0 0 30px rgba(120,160,255,0.25); }
+  #dioText { margin:0 auto 6px; font-size:14.5px; line-height:1.55; color:rgba(232,238,250,0.94);
+    max-width:600px; text-shadow:0 1px 10px rgba(0,0,0,0.95); }
+  #dioHint { font-size:11px; color:var(--muted); font-style:italic; margin-bottom:14px; }
+  #dioBack { background:rgba(20,30,48,0.66); color:var(--fg); border:1px solid rgba(120,160,210,0.4);
+    border-radius:10px; padding:9px 18px; font-size:13px; cursor:pointer; transition:background .15s, border-color .15s; }
+  #dioBack:hover { background:rgba(40,58,90,0.8); border-color:var(--accent); }
+  .dioNav { position:absolute; top:50%; transform:translateY(-50%); pointer-events:auto;
+    width:46px; height:64px; background:rgba(12,18,32,0.34); color:rgba(225,232,255,0.85);
+    border:1px solid rgba(120,160,210,0.26); border-radius:12px; font-size:30px; line-height:1; cursor:pointer;
+    backdrop-filter:blur(4px); transition:background .15s, color .15s; }
+  .dioNav:hover { background:rgba(30,44,72,0.6); color:#fff; }
+  #dioPrev { left:16px; } #dioNext { right:16px; }
+  body.dio-on #hud, body.dio-on #nav, body.dio-on #search, body.dio-on #title,
+  body.dio-on #homeBtn, body.dio-on #tourbar, body.dio-on #info, body.dio-on #orbit-footer { display:none !important; }
+  @media (max-width:560px){ #dioName { font-size:23px; } #dioText { font-size:13px; } .dioNav { width:38px; height:54px; font-size:24px; } }
   #tourbar #tourprog { font-size:11px; font-variant-numeric:tabular-nums; color:var(--accent); white-space:nowrap; opacity:.85; }
   #tourbar #tourcap { flex:1; font-size:14px; line-height:1.45; color:var(--fg); }
   #tourbar #tourExit { background:none; border:none; color:var(--muted); font-size:16px; cursor:pointer; padding:2px 6px; }
@@ -339,6 +366,20 @@ document.addEventListener('DOMContentLoaded', function(){
   </div>
   <div id="tourbar"><span id="tourprog"></span><span id="tourcap"></span><button id="tourExit" title="End tour">✕</button></div>
 
+  <!-- Stellar diorama overlay: an imagined close-up of a notable star -->
+  <div id="diorama">
+    <div id="dioVignette"></div>
+    <button id="dioPrev" class="dioNav" title="Previous star">‹</button>
+    <button id="dioNext" class="dioNav" title="Next star">›</button>
+    <div id="dioCard">
+      <span class="tag" id="dioTag"></span>
+      <h2 id="dioName"></h2>
+      <p id="dioText"></p>
+      <div id="dioHint">An artist's impression — what it might be like to be there.</div>
+      <button id="dioBack">← Back to the sky</button>
+    </div>
+  </div>
+
   <button id="homeBtn" title="Reset view — back to the start" aria-label="Reset view">
     <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v9h13v-9"/><path d="M10 19v-5h4v5"/>
@@ -518,10 +559,11 @@ scene.add(sun); scene.add(new THREE.AmbientLight(0x223044, 0.5));
 // ---------- Post-processing (bloom + ACES tone mapping) ----------
 // Guarded: if the composer can't be built on this GPU, fall back to plain
 // rendering rather than a black screen.
-let composer = null;
+let composer = null, renderPass = null;
 try {
   composer = new EffectComposer(renderer);
-  composer.addPass(new RenderPass(scene, camera));
+  renderPass = new RenderPass(scene, camera);
+  composer.addPass(renderPass);
   composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight),
     0.62,   // strength — atmosphere limb, city lights, stars and the sunlit specular glow
     0.5,    // radius
@@ -1277,9 +1319,302 @@ function updateStars(){          // keep the Sun's marker on its live sky direct
 }
 function selectNotableStar(st){
   if(!starsGroup.visible){ starsGroup.visible=true; document.getElementById('sky-stars').classList.add('active'); updateStars(); }
-  if(st.special==='sun'){ focusSun(); return; }           // the Sun has its own rich focus
-  showInfo(starInfo(st)); lookAtSky(raDecVec(st.ra,st.dec,1)); hudDist=null;
+  enterDiorama(st);   // ✦ take the viewer *there* — an imagined close-up scene
 }
+
+// ===================== ✦ Stellar dioramas =====================
+// Clicking a notable star transports you to an imagined close-up of it, rendered
+// in a dedicated scene through the same bloom pipeline. Each scene is composed
+// from shared primitives — a noise-driven star surface, layered coronae, debris
+// and accretion disks, nebulae, planets, gravitational-lens arcs — tuned per star.
+const dioScene=new THREE.Scene();
+const dioCam=new THREE.PerspectiveCamera(52, innerWidth/innerHeight, 0.1, 8000);
+let dioActive=false, dioT=0, dioOrbit=0, dioIdx=0, dioCamCfg=null;
+let dioUpdaters=[], dioDispose=[];
+const dioramaEl=document.getElementById('diorama');
+const dioName=document.getElementById('dioName'), dioTag=document.getElementById('dioTag'), dioText=document.getElementById('dioText');
+function _radialTex(stops){
+  const c=document.createElement('canvas'); c.width=c.height=128; const g=c.getContext('2d');
+  const grd=g.createRadialGradient(64,64,0,64,64,64); stops.forEach(s=>grd.addColorStop(s[0],s[1]));
+  g.fillStyle=grd; g.fillRect(0,0,128,128); return new THREE.CanvasTexture(c);
+}
+const _dioGlow=_radialTex([[0,'rgba(255,255,255,1)'],[0.22,'rgba(255,255,255,0.55)'],[0.5,'rgba(255,255,255,0.16)'],[1,'rgba(255,255,255,0)']]);
+const _dioSpike=(function(){   // bright core + 4 diffraction spikes
+  const c=document.createElement('canvas'); c.width=c.height=128; const g=c.getContext('2d');
+  const core=g.createRadialGradient(64,64,0,64,64,30); core.addColorStop(0,'rgba(255,255,255,1)'); core.addColorStop(1,'rgba(255,255,255,0)');
+  g.fillStyle=core; g.fillRect(0,0,128,128);
+  g.globalCompositeOperation='lighter';
+  for(const a of [0,Math.PI/2]){ g.save(); g.translate(64,64); g.rotate(a);
+    const lg=g.createLinearGradient(-64,0,64,0); lg.addColorStop(0,'rgba(255,255,255,0)'); lg.addColorStop(0.5,'rgba(255,255,255,0.9)'); lg.addColorStop(1,'rgba(255,255,255,0)');
+    g.fillStyle=lg; g.fillRect(-64,-1.3,128,2.6); g.restore(); }
+  return new THREE.CanvasTexture(c);
+})();
+// GLSL 3D simplex noise (Ashima) + fbm — for star surfaces, disks and planets.
+const SNOISE=`
+vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}
+vec4 mod289(vec4 x){return x-floor(x*(1.0/289.0))*289.0;}
+vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}
+vec4 taylorInvSqrt(vec4 r){return 1.79284291400159-0.85373472095314*r;}
+float snoise(vec3 v){const vec2 C=vec2(1.0/6.0,1.0/3.0);const vec4 D=vec4(0.0,0.5,1.0,2.0);
+vec3 i=floor(v+dot(v,C.yyy));vec3 x0=v-i+dot(i,C.xxx);
+vec3 g=step(x0.yzx,x0.xyz);vec3 l=1.0-g;vec3 i1=min(g.xyz,l.zxy);vec3 i2=max(g.xyz,l.zxy);
+vec3 x1=x0-i1+C.xxx;vec3 x2=x0-i2+C.yyy;vec3 x3=x0-D.yyy;i=mod289(i);
+vec4 p=permute(permute(permute(i.z+vec4(0.0,i1.z,i2.z,1.0))+i.y+vec4(0.0,i1.y,i2.y,1.0))+i.x+vec4(0.0,i1.x,i2.x,1.0));
+float n_=0.142857142857;vec3 ns=n_*D.wyz-D.xzx;vec4 j=p-49.0*floor(p*ns.z*ns.z);
+vec4 x_=floor(j*ns.z);vec4 y_=floor(j-7.0*x_);vec4 x=x_*ns.x+ns.yyyy;vec4 y=y_*ns.x+ns.yyyy;vec4 h=1.0-abs(x)-abs(y);
+vec4 b0=vec4(x.xy,y.xy);vec4 b1=vec4(x.zw,y.zw);vec4 s0=floor(b0)*2.0+1.0;vec4 s1=floor(b1)*2.0+1.0;vec4 sh=-step(h,vec4(0.0));
+vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy;vec4 a1=b1.xzyw+s1.xzyw*sh.zzww;
+vec3 p0=vec3(a0.xy,h.x);vec3 p1=vec3(a0.zw,h.y);vec3 p2=vec3(a1.xy,h.z);vec3 p3=vec3(a1.zw,h.w);
+vec4 norm=taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));
+p0*=norm.x;p1*=norm.y;p2*=norm.z;p3*=norm.w;
+vec4 m=max(0.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.0);m=m*m;
+return 42.0*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));}
+float fbm(vec3 p){float f=0.0,a=0.5;for(int i=0;i<5;i++){f+=a*snoise(p);p*=2.03;a*=0.5;}return f;}
+`;
+function _track(o){ dioDispose.push(o); return o; }
+function dioAdd(o){ dioScene.add(o); return o; }
+// ---- primitive: a turbulent star surface + corona ----
+function makeStar(cfg){
+  const grp=new THREE.Group();
+  const geo=_track(new THREE.SphereGeometry(cfg.r,96,96));
+  const mat=_track(new THREE.ShaderMaterial({
+    uniforms:{ uTime:{value:0}, uA:{value:new THREE.Color(cfg.colA)}, uB:{value:new THREE.Color(cfg.colB)},
+      uFreq:{value:cfg.freq||2.0}, uFlow:{value:cfg.flow||0.05}, uBright:{value:cfg.bright||1.0}, uContrast:{value:cfg.contrast||1.0} },
+    vertexShader:`varying vec3 vP; varying vec3 vN; varying vec3 vV;
+      void main(){ vP=position; vN=normalize(normalMatrix*normal); vec4 mv=modelViewMatrix*vec4(position,1.0); vV=normalize(-mv.xyz); gl_Position=projectionMatrix*mv; }`,
+    fragmentShader:SNOISE+`uniform float uTime,uFreq,uFlow,uBright,uContrast; uniform vec3 uA,uB; varying vec3 vP; varying vec3 vN; varying vec3 vV;
+      void main(){ vec3 q=normalize(vP);
+        float n=fbm(q*uFreq+vec3(0.0,uTime*uFlow,uTime*uFlow*0.3));
+        float n2=fbm(q*uFreq*3.1-vec3(uTime*uFlow*1.6));
+        float t=clamp(0.5+0.5*n*uContrast+0.22*n2,0.0,1.0);
+        vec3 col=mix(uA,uB,t);
+        col+=col*smoothstep(0.5,0.92,n2)*0.6;
+        float limb=pow(max(dot(vN,vV),0.0),0.42); col*=mix(0.5,1.18,limb);
+        gl_FragColor=vec4(col*uBright,1.0); }`
+  }));
+  grp.add(new THREE.Mesh(geo,mat));
+  (cfg.coronaScales||[2.4,4.0]).forEach((s,i)=>{
+    const sm=_track(new THREE.SpriteMaterial({ map:_dioGlow, color:new THREE.Color(cfg.corona||cfg.colB),
+      transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, opacity:i===0?0.7:0.3 }));
+    const sp=new THREE.Sprite(sm); sp.scale.setScalar(cfg.r*s); grp.add(sp);
+  });
+  const pulse=cfg.pulse||0, ps=cfg.pulseSpeed||0.6, base=cfg.bright||1.0;
+  const mesh=grp.children[0];
+  dioUpdaters.push((t)=>{ mat.uniforms.uTime.value=t;
+    if(pulse){ const k=1+Math.sin(t*ps)*pulse; mesh.scale.setScalar(k); mat.uniforms.uBright.value=base*(1+Math.sin(t*ps)*pulse*0.7); } });
+  return grp;
+}
+// ---- primitive: background star sphere (optionally deep-field galaxies / tint) ----
+function makeBG(n,R,opts){
+  opts=opts||{}; const pos=new Float32Array(n*3),col=new Float32Array(n*3),siz=new Float32Array(n);
+  for(let i=0;i<n;i++){ const u=Math.random()*2-1,a=Math.random()*Math.PI*2,s=Math.sqrt(1-u*u);
+    const rr=R*(0.7+Math.random()*0.3); pos[i*3]=s*Math.cos(a)*rr; pos[i*3+1]=u*rr; pos[i*3+2]=s*Math.sin(a)*rr;
+    let w=0.55+Math.random()*0.45, r=w,g=w,b=w;
+    if(opts.deep && Math.random()<0.45){ const h=Math.random(); r=w*(0.7+h*0.5); g=w*0.6; b=w*(1.1-h*0.4); }   // faint galaxies
+    if(opts.tint){ r*=opts.tint[0]; g*=opts.tint[1]; b*=opts.tint[2]; }
+    col[i*3]=r; col[i*3+1]=g; col[i*3+2]=b; siz[i]=(Math.random()*2+0.5)*(opts.size||1);
+  }
+  const sp=starPoints(pos,col,siz); sp.frustumCulled=false; _track(sp.geometry); _track(sp.material); return sp;
+}
+// ---- primitive: glowing nebula (scattered additive sprites) ----
+function makeNebula(cfg){
+  const grp=new THREE.Group();
+  for(let i=0;i<(cfg.count||28);i++){
+    const sm=_track(new THREE.SpriteMaterial({ map:_dioGlow, color:new THREE.Color(cfg.colors[i%cfg.colors.length]),
+      transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, opacity:cfg.opacity||0.11 }));
+    const sp=new THREE.Sprite(sm);
+    const d=new THREE.Vector3(Math.random()*2-1,(Math.random()*2-1)*0.7,Math.random()*2-1).normalize().multiplyScalar((cfg.R||280)*(0.45+Math.random()*0.75));
+    sp.position.copy(d); sp.scale.setScalar((cfg.size||170)*(0.5+Math.random())); grp.add(sp);
+  }
+  return grp;
+}
+// ---- primitive: a glowing point/companion (optional diffraction spikes) ----
+function glowPoint(color,size,pos,spikes){
+  const sm=_track(new THREE.SpriteMaterial({ map:spikes?_dioSpike:_dioGlow, color:new THREE.Color(color),
+    transparent:true, blending:THREE.AdditiveBlending, depthWrite:false }));
+  const sp=new THREE.Sprite(sm); sp.scale.setScalar(size); if(pos) sp.position.copy(pos); return sp;
+}
+// ---- primitive: tilted debris disk of particles ----
+function makeDebris(cfg){
+  const n=cfg.count||2400, pos=new Float32Array(n*3),col=new Float32Array(n*3),siz=new Float32Array(n);
+  for(let i=0;i<n;i++){ const a=Math.random()*Math.PI*2, rr=cfg.inR+Math.random()*(cfg.outR-cfg.inR);
+    pos[i*3]=Math.cos(a)*rr; pos[i*3+1]=(Math.random()-0.5)*cfg.thick; pos[i*3+2]=Math.sin(a)*rr;
+    const w=0.4+Math.random()*0.6; col[i*3]=w*cfg.tint[0]; col[i*3+1]=w*cfg.tint[1]; col[i*3+2]=w*cfg.tint[2]; siz[i]=Math.random()*2+0.5;
+  }
+  const sp=starPoints(pos,col,siz); sp.frustumCulled=false; sp.rotation.x=cfg.tilt!=null?cfg.tilt:0.55; _track(sp.geometry); _track(sp.material);
+  dioUpdaters.push((t)=>{ sp.rotation.y=t*(cfg.spin||0.05); });
+  return sp;
+}
+// ---- primitive: lit rocky planet ----
+function makePlanet(cfg){
+  const geo=_track(new THREE.SphereGeometry(cfg.r,72,72));
+  const mat=_track(new THREE.ShaderMaterial({ uniforms:{ uTime:{value:0}, uCol:{value:new THREE.Color(cfg.col||0x8a6a52)}, uLight:{value:cfg.light.clone().normalize()} },
+    vertexShader:`varying vec3 vP; varying vec3 vWN; void main(){ vP=position; vWN=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+    fragmentShader:SNOISE+`uniform vec3 uCol,uLight; uniform float uTime; varying vec3 vP; varying vec3 vWN;
+      void main(){ float d=max(dot(normalize(vWN),normalize(uLight)),0.0);
+        float n=fbm(normalize(vP)*3.2+uTime*0.02); float n2=fbm(normalize(vP)*7.0);
+        vec3 base=uCol*(0.65+0.5*n)+vec3(0.05,0.04,0.03)*n2;
+        vec3 col=base*(0.03+1.15*pow(d,0.85));
+        col+=vec3(0.25,0.4,0.7)*pow(max(1.0-d,0.0),3.0)*smoothstep(0.0,0.2,d)*0.4;   // thin atmosphere rim
+        gl_FragColor=vec4(col,1.0);} `}));
+  const m=new THREE.Mesh(geo,mat); if(cfg.pos) m.position.copy(cfg.pos);
+  dioUpdaters.push((t)=>{ mat.uniforms.uTime.value=t; m.rotation.y=t*0.03; });
+  return m;
+}
+// ---- primitive: black hole — event horizon, accretion disk, Einstein ring ----
+function makeBlackHole(cfg){
+  const grp=new THREE.Group(), r=cfg.r||7;
+  grp.add(new THREE.Mesh(_track(new THREE.SphereGeometry(r,48,48)), _track(new THREE.MeshBasicMaterial({color:0x000000}))));
+  const dg=_track(new THREE.RingGeometry(r*1.35, r*6.2, 240, 6));
+  const dm=_track(new THREE.ShaderMaterial({ uniforms:{uTime:{value:0}, uIn:{value:r*1.35}, uOut:{value:r*6.2}},
+    side:THREE.DoubleSide, transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
+    vertexShader:`varying float vR; varying float vA; void main(){ vR=length(position.xy); vA=atan(position.y,position.x); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+    fragmentShader:SNOISE+`uniform float uTime,uIn,uOut; varying float vR; varying float vA;
+      void main(){ float swirl=fbm(vec3(cos(vA)*2.0,sin(vA)*2.0,vR*0.5-uTime*0.7));
+        float b=smoothstep(0.0,1.0,0.55+0.55*swirl);
+        float dopp=0.5+0.5*sin(vA);                                  // relativistic beaming
+        vec3 warm=vec3(1.0,0.45,0.12), hot=vec3(1.0,0.96,0.86), cool=vec3(0.55,0.66,1.0);
+        vec3 col=mix(warm,hot,b); col=mix(col,cool,dopp*0.45);
+        float fade=smoothstep(uOut,uIn,vR);
+        gl_FragColor=vec4(col*(1.1+1.3*dopp), b*fade*(0.35+0.95*dopp)); }`}));
+  const disk=new THREE.Mesh(dg,dm); disk.rotation.x=Math.PI*0.5-0.46; grp.add(disk);
+  const pr=new THREE.Mesh(_track(new THREE.RingGeometry(r*1.02,r*1.14,128)),
+    _track(new THREE.MeshBasicMaterial({color:0xffeec0, side:THREE.DoubleSide, transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, opacity:0.95})));
+  grp.add(pr);
+  dioUpdaters.push((t)=>{ dm.uniforms.uTime.value=t; disk.rotation.z=t*0.18; pr.quaternion.copy(dioCam.quaternion); });
+  return grp;
+}
+// ---- primitive: gravitational-lens arcs (Earendel) ----
+function lensArc(R, a0, a1, tilt, color, thick){
+  const pts=[]; for(let i=0;i<=40;i++){ const a=a0+(a1-a0)*i/40; pts.push(new THREE.Vector3(Math.cos(a)*R, Math.sin(a)*R, 0)); }
+  const geo=_track(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 40, thick||1.2, 8, false));
+  const m=_track(new THREE.MeshBasicMaterial({ color:new THREE.Color(color), transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, opacity:0.7 }));
+  const mesh=new THREE.Mesh(geo,m); mesh.rotation.z=tilt||0; return mesh;
+}
+const _V=(x,y,z)=>new THREE.Vector3(x,y,z);
+// Compose the scene for one star; returns the camera config.
+function buildDiorama(st){
+  dioScene.background=new THREE.Color(0x02030a);
+  const cam={ radius:120, height:18, target:_V(0,0,0), rate:0.05 };
+  switch(st.name){
+    case 'Sun': {
+      dioAdd(makeBG(1400,1600));
+      dioAdd(makeStar({ r:34, colA:0xff6a12, colB:0xffe9ad, corona:0xffae44, coronaScales:[2.2,3.4,6.0], freq:2.3, flow:0.06, bright:1.18, contrast:1.25, pulse:0.012, pulseSpeed:0.8 }));
+      for(let i=0;i<5;i++){ const a=Math.random()*Math.PI*2, e=0.5+Math.random()*0.4;   // prominences at the limb
+        const p=glowPoint(0xff5a22, 26+Math.random()*18, _V(Math.cos(a)*34,Math.sin(a)*34*e,Math.sin(a*1.7)*10)); p.material.opacity=0.6; dioAdd(p); }
+      cam.radius=95; cam.height=22; cam.rate=0.045; break;
+    }
+    case 'Sirius': {
+      dioAdd(makeBG(1500,1700,{tint:[0.85,0.9,1.0]}));
+      dioAdd(makeStar({ r:18, colA:0x9fc6ff, colB:0xffffff, corona:0xc4dcff, coronaScales:[2.4,4.2,7], freq:2.6, flow:0.05, bright:1.25 }));
+      const spike=glowPoint(0xeaf3ff, 150, _V(0,0,0), true); dioAdd(spike);
+      dioUpdaters.push(()=>{ spike.quaternion.copy(dioCam.quaternion); });
+      dioAdd(glowPoint(0xdfeaff, 9, _V(70,-26,-30)));   // Sirius B, the white-dwarf "Pup"
+      cam.radius=72; cam.height=10; cam.rate=0.05; break;
+    }
+    case 'Polaris': {
+      const bg=makeBG(1700,1600); dioAdd(bg);
+      dioAdd(makeStar({ r:24, colA:0xffd79a, colB:0xfff5e2, corona:0xffe4b6, coronaScales:[2.2,3.6,6], freq:2.1, flow:0.045, bright:1.18 }));
+      dioUpdaters.push((t)=>{ bg.rotation.z=t*0.05; });   // the whole sky wheels around the pole star
+      cam.radius=95; cam.height=6; cam.rate=0.0; break;   // hold steady; let the sky turn
+    }
+    case 'Betelgeuse': {
+      dioAdd(makeBG(1200,1900,{tint:[1.0,0.85,0.8]}));
+      dioAdd(makeNebula({ colors:[0x5a1505,0x7a2a10,0x3a0f08], count:16, R:260, size:200, opacity:0.06 }));   // shed dust, asymmetric
+      dioAdd(makeStar({ r:60, colA:0x6e1000, colB:0xff5e2c, corona:0xff3c14, coronaScales:[1.5,2.4,4.2], freq:1.5, flow:0.03, bright:0.98, contrast:1.55, pulse:0.035, pulseSpeed:0.45 }));
+      cam.radius=165; cam.height=26; cam.rate=0.035; break;
+    }
+    case 'Proxima Centauri': {
+      dioAdd(makeBG(1500,1700,{tint:[0.9,0.85,0.9]}));
+      dioAdd(makeStar({ r:9, colA:0x6a0d00, colB:0xff5a30, corona:0xff3414, coronaScales:[2.6,4.5,8], freq:3.0, flow:0.08, bright:0.95, pulse:0.05, pulseSpeed:1.1 }).translateX(60).translateY(28));
+      dioAdd(makePlanet({ r:34, col:0x6a5246, light:_V(60,28,0), pos:_V(-14,-8,0) }));   // Proxima b, lit by the red dwarf
+      dioAdd(glowPoint(0xfff2d8, 12, _V(150,60,-220)));   // Alpha Centauri A
+      dioAdd(glowPoint(0xffd9a8, 9, _V(170,52,-220)));    // Alpha Centauri B
+      cam.radius=92; cam.height=10; cam.rate=0.03; cam.target=_V(-6,-2,0); break;
+    }
+    case 'Vega': {
+      dioAdd(makeBG(1500,1700,{tint:[0.85,0.9,1.0]}));
+      dioAdd(makeStar({ r:16, colA:0x9bb8ff, colB:0xffffff, corona:0xb6d0ff, coronaScales:[2.4,4.0,7], freq:2.6, flow:0.05, bright:1.3 }));
+      dioAdd(makeDebris({ inR:30, outR:78, thick:3, tilt:0.62, tint:[0.6,0.72,1.0], count:3200, spin:0.06 }));
+      cam.radius=125; cam.height=34; cam.rate=0.045; break;
+    }
+    case 'Canopus': {
+      dioAdd(makeBG(1400,1700));
+      dioAdd(makeStar({ r:42, colA:0xfff0cf, colB:0xffffff, corona:0xfff1da, coronaScales:[2.0,3.2,5.2], freq:2.0, flow:0.045, bright:1.22 }));
+      cam.radius=135; cam.height=24; cam.rate=0.04; break;
+    }
+    case 'Rigel': {
+      dioAdd(makeBG(1400,1800,{tint:[0.85,0.9,1.0]}));
+      dioAdd(makeNebula({ colors:[0x24407a,0x3866bf,0x1c3568], count:34, R:270, size:190, opacity:0.09 }));   // blue reflection nebula
+      dioAdd(makeStar({ r:34, colA:0x6f9bff, colB:0xeaf2ff, corona:0x8fb2ff, coronaScales:[1.8,3.0,5.2], freq:2.2, flow:0.05, bright:1.32 }));
+      cam.radius=125; cam.height=20; cam.rate=0.042; break;
+    }
+    case 'Sagittarius A*': {
+      dioAdd(makeBG(2200,2200,{deep:true, tint:[1.0,0.92,0.82]}));
+      dioAdd(makeNebula({ colors:[0x3a2a12,0x5a3a1a,0x21304a], count:18, R:420, size:300, opacity:0.05 }));   // crowded galactic-centre glow
+      dioAdd(makeBlackHole({ r:8 }));
+      cam.radius=70; cam.height=20; cam.rate=0.05; break;
+    }
+    case 'Earendel': {
+      dioAdd(makeBG(2600,2400,{deep:true}));
+      const lensCol=0xbcd0ff;
+      dioAdd(lensArc(150, 0.6, 2.5, 0.2, lensCol, 1.4));
+      dioAdd(lensArc(200, 3.4, 5.0, -0.3, 0xffd8b0, 1.1));
+      dioAdd(lensArc(110, 2.0, 3.4, 0.9, lensCol, 1.0));
+      const star=glowPoint(0xeaf2ff, 90, _V(Math.cos(1.2)*150, Math.sin(1.2)*150, 0), true);
+      star.rotation.z=0.2; dioAdd(star); dioUpdaters.push(()=>{ star.quaternion.copy(dioCam.quaternion); });
+      dioAdd(makeNebula({ colors:[0x223a6a,0x402a5a], count:10, R:120, size:160, opacity:0.06 }));   // faint lensing cluster
+      cam.radius=150; cam.height=8; cam.rate=0.03; break;
+    }
+    case 'R136a1': {
+      dioAdd(makeBG(1600,2000,{tint:[0.95,0.9,1.0]}));
+      dioAdd(makeNebula({ colors:[0xff4a82,0x9a3aff,0x3a7aff,0xff7a3a], count:46, R:340, size:210, opacity:0.10 }));   // Tarantula Nebula
+      for(let i=0;i<16;i++){ const d=new THREE.Vector3(Math.random()*2-1,(Math.random()*2-1)*0.8,Math.random()*2-1).normalize().multiplyScalar(70+Math.random()*120);
+        dioAdd(glowPoint(Math.random()<0.5?0xbcd2ff:0xffffff, 7+Math.random()*9, d)); }   // a cluster of hot young stars
+      dioAdd(makeStar({ r:26, colA:0x7aa0ff, colB:0xffffff, corona:0x9ab8ff, coronaScales:[2.0,3.4,6.0], freq:2.6, flow:0.06, bright:1.5 }));
+      cam.radius=120; cam.height=22; cam.rate=0.05; break;
+    }
+    default: {
+      dioAdd(makeBG(1400,1700));
+      dioAdd(makeStar({ r:24, colA:0xffd79a, colB:0xffffff, corona:0xffe4b6, freq:2.2, flow:0.05, bright:1.2 }));
+    }
+  }
+  return cam;
+}
+function clearDiorama(){
+  for(const o of dioScene.children.slice()) dioScene.remove(o);
+  for(const d of dioDispose){ try{ d.dispose && d.dispose(); }catch(_){ } }
+  dioDispose=[]; dioUpdaters=[];
+}
+function enterDiorama(st){
+  if(typeof exitFocus==='function') exitFocus(); if(typeof exitRide==='function') exitRide();
+  clearDiorama(); dioActive=true; dioT=0; dioOrbit=Math.random()*6.283;
+  dioCamCfg=buildDiorama(st); dioIdx=STARS.indexOf(st);
+  dioCam.aspect=innerWidth/innerHeight; dioCam.updateProjectionMatrix();
+  dioName.textContent=st.name; dioTag.textContent=st.tag||'Star'; dioText.textContent=st.fact;
+  document.body.classList.add('dio-on'); dioramaEl.classList.add('show');
+  labelRenderer.domElement.style.display='none';
+}
+function exitDiorama(){
+  if(!dioActive) return; dioActive=false; clearDiorama();
+  if(renderPass){ renderPass.scene=scene; renderPass.camera=camera; }
+  document.body.classList.remove('dio-on'); dioramaEl.classList.remove('show');
+  labelRenderer.domElement.style.display='';
+}
+function dioGo(delta){ const n=STARS.length; enterDiorama(STARS[((dioIdx+delta)%n+n)%n]); }
+function updateDiorama(dt){
+  dioT+=dt; dioOrbit+=dt*(dioCamCfg.rate||0.05);
+  const c=dioCamCfg, r=c.radius;
+  dioCam.position.set(Math.cos(dioOrbit)*r, (c.height||r*0.16)+Math.sin(dioT*0.12)*r*0.05, Math.sin(dioOrbit)*r);
+  dioCam.lookAt(c.target.x,c.target.y,c.target.z);
+  for(const u of dioUpdaters){ try{ u(dioT,dt); }catch(_){ } }
+}
+document.getElementById('dioBack').addEventListener('click', exitDiorama);
+document.getElementById('dioPrev').addEventListener('click', ()=>dioGo(-1));
+document.getElementById('dioNext').addEventListener('click', ()=>dioGo(1));
+window.addEventListener('keydown', e=>{ if(!dioActive) return;
+  if(e.key==='Escape') exitDiorama(); else if(e.key==='ArrowLeft') dioGo(-1); else if(e.key==='ArrowRight') dioGo(1); });
+
 
 // ---- Meteor showers: annual radiants + activity windows ----
 const SHOWERS=[
@@ -2534,6 +2869,12 @@ let last=performance.now();
 let lastPlanetUpd=-1e9;   // forces updatePlanets on the first frame
 function tick(now){
   const dt=Math.min(0.05,(now-last)/1000); last=now;
+  if(dioActive){                                   // ✦ stellar diorama owns the screen
+    updateDiorama(dt);
+    if(composer && renderPass){ renderPass.scene=dioScene; renderPass.camera=dioCam; composer.render(); }
+    else renderer.render(dioScene,dioCam);
+    requestAnimationFrame(tick); return;
+  }
   const date=new Date(simNow());
   const gmst=satellite.gstime(date);
   earthGroup.rotation.y=gmst; clouds.rotation.y=now*0.000004;
@@ -2596,6 +2937,7 @@ requestAnimationFrame(tick);
 
 addEventListener('resize',()=>{
   camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+  dioCam.aspect=innerWidth/innerHeight; dioCam.updateProjectionMatrix();
   renderer.setSize(innerWidth,innerHeight);
   if(composer) composer.setSize(innerWidth,innerHeight);
   labelRenderer.setSize(innerWidth,innerHeight);
