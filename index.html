@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.38">
+<meta name="app-rev" content="3.39">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -171,6 +171,10 @@ document.addEventListener('DOMContentLoaded', function(){
     border:1px solid rgba(150,180,255,0.34); border-radius:5px; padding:1px 7px; white-space:nowrap; cursor:pointer;
     pointer-events:auto; text-shadow:0 0 5px rgba(0,0,0,0.9); }
   .star-label:hover { color:#fff; border-color:rgba(190,215,255,0.7); box-shadow:0 0 9px rgba(140,170,255,0.45); }
+  .place-label { font-size:10px; color:rgba(150,235,180,0.95); background:rgba(8,24,16,0.55);
+    border:1px solid rgba(110,225,150,0.34); border-radius:5px; padding:1px 6px; white-space:nowrap; cursor:pointer;
+    pointer-events:auto; text-shadow:0 0 5px rgba(0,0,0,0.9); }
+  .place-label:hover { color:#bfffd6; border-color:rgba(150,245,185,0.7); box-shadow:0 0 9px rgba(90,220,140,0.45); }
 
   #search { top:16px; left:50%; transform:translateX(-50%); padding:8px 10px; display:flex; align-items:center; gap:8px; }
   #search input { width:230px; max-width:46vw; background:rgba(20,30,48,0.7); border:1px solid rgba(120,160,210,0.25);
@@ -451,6 +455,12 @@ document.addEventListener('DOMContentLoaded', function(){
         <button class="sky" id="sky-aurora" data-tip="Toggle the auroras (northern & southern lights) glowing over the poles.">Aurora</button>
       </div>
     </div>
+    <div class="navgroup collapsed" id="grp-place">
+      <button class="navhead" data-group="place">🌍 Planetwatch <span class="caret">▾</span></button>
+      <div class="navitems" id="place-items">
+        <button class="sky" id="place-pins" data-tip="Pin Earth-from-space landmarks on the globe — the natural wonders, human-made marvels and dynamic phenomena astronauts photograph from orbit. Click one to fly there; marquee items open a cinematic close-up.">📍 Show landmarks</button>
+      </div>
+    </div>
   </div>
 
   <div id="hud" class="panel">
@@ -653,6 +663,10 @@ function selectionScenePos(out){
     if(!selection.obj) return false;
     out.copy(selection.obj.position); return true;
   }
+  if(selection.kind==='place'){               // Planetwatch landmark (rides earthGroup)
+    if(!selection.item || !selection.item._anchor) return false;
+    selection.item._anchor.getWorldPosition(out); return true;
+  }
   if(selection.kind==='cloud'){
     if(!cloudCur) return false;
     const i=selection.idx, x=cloudCur[i*3], y=cloudCur[i*3+1], z=cloudCur[i*3+2];
@@ -796,6 +810,7 @@ async function doSearch(qRaw){
   if((ql==='iss'||ql.includes('space station')) && flyToISS()){ searchMsg(''); return; }   // ISS by name
   // Skywatch objects (constellations, comets, meteor showers) before satellites.
   if(skywatchSearch(ql)){ searchMsg(''); return; }
+  if(planetwatchSearch(ql)){ searchMsg(''); return; }
   let idx=cloudMeta.findIndex(m=>m.name && m.name.toLowerCase()===ql);
   if(idx<0) idx=cloudMeta.findIndex(m=>m.name && m.name.toLowerCase().includes(ql));
   if(idx>=0){ selectCloud(idx,true); searchMsg(''); return; }
@@ -1863,7 +1878,7 @@ const MILKYWAY={ name:'The Milky Way', tag:'Our galaxy', fact:'A barred spiral o
 const AURORA={ name:'Aurora', tag:'Northern & southern lights', fact:'When charged particles from the Sun slam into the upper atmosphere and follow Earth’s magnetic field to the poles, they make oxygen and nitrogen glow — green and red from oxygen, blue and violet from nitrogen — rippling in vast curtains 100–300 km overhead.' };
 // Resolved lazily (at click time) so it never touches SHOWERS/COMETS/etc. before
 // those lists are initialized — an eager const here aborts the whole module at load.
-function dioListFor(kind){ return ({ star:STARS, const:CONSTELLATIONS, shower:SHOWERS, comet:COMETS, asteroid:ASTEROIDS, milkyway:[MILKYWAY], aurora:[AURORA], sat:SAT_DIORAMAS })[kind]; }
+function dioListFor(kind){ return ({ star:STARS, const:CONSTELLATIONS, shower:SHOWERS, comet:COMETS, asteroid:ASTEROIDS, milkyway:[MILKYWAY], aurora:[AURORA], sat:SAT_DIORAMAS, planet:PLANETWATCH_DIORAMAS })[kind]; }
 function dioMeta(kind,o){
   if(kind==='const')    return { title:o.name, tag:'Constellation', text:o.fact };
   if(kind==='shower')   return { title:o.name, tag:'Meteor shower', text:'When Earth ploughs through dust shed by '+o.src+', up to ~'+o.zhr+' meteors an hour appear to rain from this point in '+(o.name)+'. The "shooting stars" are sand- to pebble-sized grains burning up ~80 km overhead at tens of thousands of mph.' };
@@ -1871,6 +1886,7 @@ function dioMeta(kind,o){
   if(kind==='asteroid') return { title:o.name, tag:'Asteroid', text:o.fact };
   if(kind==='milkyway'||kind==='aurora') return { title:o.name, tag:o.tag, text:o.fact };
   if(kind==='sat'){ const c=o._ctx||{}; return { title:c.name && c.name!==o.name ? o.name+' — '+c.name : o.name, tag:c.orbit||o.orbit||'Satellite', text:satCardText(o) }; }
+  if(kind==='planet')   return { title:o.name, tag:o.tag||'Earth from space', text:o.blurb };
   return { title:o.name, tag:o.tag||'Star', text:o.fact };   // star
 }
 function buildScene(kind,o){
@@ -1881,12 +1897,13 @@ function buildScene(kind,o){
   if(kind==='milkyway') return buildMilkyWayScene();
   if(kind==='aurora')   return buildAuroraScene();
   if(kind==='sat')      return buildSatScene(o);
+  if(kind==='planet')   return o.build({ item:o });
   return buildStarScene(o);
 }
 let dioKind='star', dioList=STARS;
 function enterDiorama(kind,obj){
   if(typeof kind==='object'){ obj=kind; kind='star'; }   // back-compat
-  if(typeof exitFocus==='function') exitFocus(); if(typeof exitRide==='function') exitRide();
+  if(typeof exitFocus==='function') exitFocus(); if(typeof exitRide==='function') exitRide(); if(typeof exitPwVisit==='function') exitPwVisit();
   clearDiorama(); dioActive=true; dioT=0; dioOrbit=Math.random()*6.283;
   dioCamCfg=buildScene(kind,obj);
   dioKind=kind; dioList=dioListFor(kind)||[obj]; dioIdx=dioList.indexOf(obj);
@@ -2616,15 +2633,18 @@ function applyMorph(){
 const ray=new THREE.Raycaster(); ray.params.Points.threshold=0.03;
 const ndc=new THREE.Vector2(); const infoEl=document.getElementById('info');
 const closeupBtn=document.getElementById('infoCloseup');
-closeupBtn.addEventListener('click', openSatDiorama);
+closeupBtn.addEventListener('click', ()=>{
+  if(selection && selection.kind==='place' && selection.item && selection.item.build){ enterDiorama('planet', selection.item); return; }
+  openSatDiorama();
+});
 function showInfo(d){
   document.getElementById('infoTag').textContent=d.tag||'';
   document.getElementById('infoName').textContent=d.name||'';
   document.getElementById('infoText').textContent=d.text||'';
-  closeupBtn.style.display = (selection && (selection.kind==='cloud' || selection.kind==='rec')) ? 'block' : 'none';
+  closeupBtn.style.display = (selection && ((selection.kind==='cloud' || selection.kind==='rec') || (selection.kind==='place' && selection.item && selection.item.build))) ? 'block' : 'none';
   infoEl.classList.add('show');
 }
-function deselect(){ infoEl.classList.remove('show'); selection=null; hudDist=null; if(typeof exitFocus==='function') exitFocus(); if(typeof exitRide==='function') exitRide(); }
+function deselect(){ infoEl.classList.remove('show'); selection=null; hudDist=null; if(typeof exitFocus==='function') exitFocus(); if(typeof exitRide==='function') exitRide(); if(typeof exitPwVisit==='function') exitPwVisit(); }
 document.getElementById('infoClose').addEventListener('click', deselect);
 // A drag to orbit the camera ends in a synthetic 'click'; remember where the
 // press started so we can tell a real click (pick/deselect) from a drag (which
@@ -3183,6 +3203,243 @@ function region(mi){
 }
 const fmt=n=>Math.round(n).toLocaleString();
 
+// ===================== 🌍 Planetwatch =====================
+// Earth-from-space landmarks — a sibling of Skywatch. Pins ride earthGroup and
+// their labels are gated by occludedByEarth (far side hides). Two tiers: cheap
+// "visit on globe" (camera pinned above the live world position as Earth turns)
+// and bespoke procedural dioramas through the SAME engine as stars/satellites.
+
+// --- Diorama helper: a self-lit "patch of Earth from orbit" painted by a shader. ---
+function dioGround(decls, body, uniforms){
+  const geo=_track(new THREE.PlaneGeometry(1600,1600,1,1));
+  const u=Object.assign({ uT:{value:0} }, uniforms||{});
+  const frag='#define PI 3.14159265\n'+SNOISE+'\nvarying vec2 vUv; uniform float uT;\n'+(decls||'')
+    +'\nfloat fbm(vec3 p){float a=0.5,s=0.0;for(int i=0;i<5;i++){s+=a*snoise(p);p*=2.02;a*=0.5;}return s;}\n'
+    +'void main(){vec2 uv=vUv;vec3 col=vec3(0.0);\n'+body+'\ngl_FragColor=vec4(clamp(col,0.0,1.6),1.0);}';
+  const mat=_track(new THREE.ShaderMaterial({ uniforms:u,
+    vertexShader:'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+    fragmentShader:frag }));
+  const m=new THREE.Mesh(geo,mat); m.rotation.x=-Math.PI/2; dioAdd(m);
+  dioUpdaters.push(t=>{ u.uT.value=t; });
+  return mat;
+}
+function dioGroundScene(decls, body, uniforms, opts){
+  opts=opts||{};
+  dioScene.background=new THREE.Color(opts.bg!=null?opts.bg:0x01030a);
+  dioGround(decls, body, uniforms);
+  return Object.assign({ radius:300, height:560, target:_V(0,0,0), rate:0.03 }, opts.cam||{});
+}
+function buildReefScene(){ return dioGroundScene('', `
+  float shore = uv.y + 0.14*fbm(vec3(uv*4.0,2.0));
+  float t=smoothstep(0.30,0.72, shore);
+  vec3 deep=vec3(0.02,0.10,0.30), shallow=vec3(0.10,0.64,0.68), sand=vec3(0.62,0.82,0.74);
+  col=mix(shallow, deep, t);
+  float reef=smoothstep(0.46,0.52, fbm(vec3(uv*vec2(10.0,20.0),5.0)));
+  col=mix(col, sand, reef*(1.0-t)*0.85);
+  col*=0.85+0.25*fbm(vec3(uv*16.0,1.0));
+  col+=exp(-pow((uv.x-0.62)*5.0,2.0))*0.22*vec3(1.0,0.98,0.9);
+`, {}, {bg:0x02101c}); }
+function buildCanyonScene(){ return dioGroundScene('', `
+  float bands=0.5+0.5*sin(uv.y*46.0 + fbm(vec3(uv*5.0,0.0))*5.0);
+  col=mix(vec3(0.62,0.36,0.22), vec3(0.42,0.24,0.16), bands);
+  col*=0.72+0.32*fbm(vec3(uv*18.0,1.0));
+  float path=uv.x-(0.5+0.17*sin(uv.y*7.0));
+  col=mix(col, vec3(0.22,0.40,0.42), exp(-pow(path*30.0,2.0)));
+`, {}, {bg:0x140a06}); }
+function buildRichatScene(){ return dioGroundScene('', `
+  vec2 c=uv-0.5; float r=length(c)*2.0;
+  col=mix(vec3(0.56,0.44,0.30), vec3(0.40,0.31,0.22), 0.5+0.5*sin(r*42.0));
+  col*=0.7+0.34*fbm(vec3(uv*12.0,1.0));
+  col=mix(col, vec3(0.66,0.54,0.36)*(0.8+0.3*fbm(vec3(uv*9.0,3.0))), smoothstep(0.82,1.0,r));
+`, {}, {bg:0x140e08}); }
+function buildNileNightScene(){ return dioGroundScene('', `
+  col=vec3(0.01,0.01,0.03);
+  float path = uv.x - (0.5 + 0.16*sin(uv.y*6.0+1.0));
+  float river=exp(-pow(path*42.0,2.0));
+  float delta=smoothstep(0.28,0.0,uv.y)*exp(-pow((uv.x-0.5)*5.0,2.0));
+  float lights=river + delta*1.5;
+  float dots=smoothstep(0.88,1.0, fbm(vec3(uv*70.0,3.0)))*clamp(lights*3.0,0.0,1.0);
+  col += vec3(1.0,0.86,0.55)*lights*0.9 + vec3(1.0,0.95,0.8)*dots*1.6;
+`, {}, {bg:0x010104}); }
+function buildAmazonScene(){ return dioGroundScene('', `
+  col=vec3(0.05,0.28,0.11)*(0.7+0.5*fbm(vec3(uv*9.0,0.0)));
+  float river=exp(-pow((uv.x-(0.5+0.22*sin(uv.y*5.0)))*26.0,2.0));
+  float ox=exp(-pow((length(uv-vec2(0.32,0.6))-0.05)*30.0,2.0));
+  col=mix(col, vec3(0.36,0.46,0.40), clamp(river+ox,0.0,1.0));
+`, {}, {bg:0x06160a}); }
+function buildBahamasScene(){ return dioGroundScene('', `
+  float band=fbm(vec3(uv*6.0,0.0));
+  col=mix(vec3(0.72,0.84,0.80), vec3(0.12,0.66,0.70), smoothstep(0.18,0.5,band));
+  col=mix(col, vec3(0.02,0.12,0.34), smoothstep(0.55,0.82,band));
+  col+=exp(-pow((uv.x-0.6)*6.0,2.0))*0.18;
+`, {}, {bg:0x02101e}); }
+function buildSalarScene(){ return dioGroundScene('', `
+  float crack=smoothstep(0.04,0.0, abs(fract(fbm(vec3(uv*5.0,2.0))*6.0)-0.5)-0.44);
+  vec3 sky=mix(vec3(0.45,0.62,0.95), vec3(0.96,0.86,0.72), uv.y);
+  col=mix(vec3(0.86,0.88,0.92), sky, 0.5);
+  col-=crack*0.22;
+  col+=exp(-pow((uv.x-0.5)*8.0,2.0)-pow((uv.y-0.72)*8.0,2.0))*0.55;
+`, {}, {bg:0x0a1020}); }
+function buildBetsibokaScene(){ return dioGroundScene('', `
+  float s=fbm(vec3(uv*4.0, uT*0.03));
+  float river=exp(-pow((uv.x-0.5-0.15*sin(uv.y*5.0))*9.0,2.0));
+  float plume=smoothstep(0.25,0.7, s)*(1.0-uv.y);
+  col=mix(vec3(0.04,0.22,0.42), vec3(0.62,0.18,0.07), clamp(river+plume*0.85,0.0,1.0));
+`, {}, {bg:0x021018}); }
+function buildKoreaNightScene(){ return dioGroundScene('', `
+  col=vec3(0.01,0.01,0.03);
+  float south=smoothstep(0.52,0.18,uv.y);
+  float city=smoothstep(0.72,1.0, fbm(vec3(uv*44.0,1.0)))*south;
+  col += vec3(1.0,0.9,0.6)*city*1.7 + vec3(0.9,0.85,0.7)*south*0.16*exp(-pow((uv.x-0.5)*3.0,2.0));
+  col += vec3(1.0,0.95,0.82)*exp(-pow((uv.x-0.46)*22.0,2.0)-pow((uv.y-0.30)*22.0,2.0));
+  col += vec3(0.7,0.85,1.0)*exp(-pow((uv.x-0.52)*60.0,2.0)-pow((uv.y-0.66)*60.0,2.0));
+`, {}, {bg:0x010104}); }
+function buildHurricaneScene(){ return dioGroundScene('', `
+  vec2 c=uv-0.5; float r=length(c)*2.0; float a=atan(c.y,c.x);
+  float cloud=smoothstep(0.2,0.85, 0.5+0.5*sin(a*2.0 + r*13.0 - uT*1.1))*smoothstep(1.15,0.18,r);
+  float eye=smoothstep(0.10,0.17,r);
+  cloud*=eye*(0.7+0.4*fbm(vec3(uv*8.0, uT*0.05)));
+  col=mix(vec3(0.03,0.16,0.34), vec3(0.95,0.97,1.0), clamp(cloud,0.0,1.0));
+  col=mix(vec3(0.02,0.10,0.24), col, eye);
+`, {}, {bg:0x02101e}); }
+function buildAuroraOrbitScene(){ return dioGroundScene('', `
+  col=vec3(0.01,0.02,0.04);
+  float band=0.0;
+  for(int i=0;i<3;i++){ float fi=float(i);
+    float y0=0.42+0.13*fi + 0.05*sin(uv.x*8.0+uT*0.7+fi*1.7);
+    band+=exp(-pow((uv.y-y0)*20.0,2.0));
+  }
+  float curt=band*(0.6+0.45*fbm(vec3(uv*vec2(11.0,3.0), uT*0.12)));
+  col+=mix(vec3(0.10,1.0,0.5), vec3(1.0,0.3,0.55), smoothstep(0.55,0.78,uv.y))*curt*0.95;
+  col+=vec3(1.0,0.9,0.6)*smoothstep(0.82,1.0,fbm(vec3(uv*42.0,2.0)))*smoothstep(0.34,0.08,uv.y)*0.5;
+`, {}, {bg:0x010206}); }
+function buildVolcanoScene(){ return dioGroundScene('', `
+  col=vec3(0.24,0.17,0.13)*(0.6+0.45*fbm(vec3(uv*11.0,0.0)));
+  vec2 p=uv-vec2(0.5,0.45);
+  float plume=exp(-pow(p.x*8.0 - sin(uv.y*3.0+uT*0.3)*0.7,2.0)) * smoothstep(0.0,0.5,uv.y-0.42);
+  plume*=0.6+0.5*fbm(vec3(uv*6.0, uT*0.12));
+  col=mix(col, vec3(0.72,0.72,0.74), clamp(plume,0.0,1.0));
+  col-=exp(-pow((uv.x-0.72)*6.0,2.0))*smoothstep(0.5,0.4,uv.y)*0.14;
+  col+=vec3(1.0,0.42,0.10)*exp(-pow((uv.x-0.5)*30.0,2.0)-pow((uv.y-0.44)*30.0,2.0));
+`, {}, {bg:0x0a0604}); }
+function buildLightningScene(){ return dioGroundScene('', `
+  col=vec3(0.02,0.03,0.05)*(0.6+0.6*fbm(vec3(uv*5.0,0.0)));
+  float fl=0.0;
+  for(int i=0;i<3;i++){ float fi=float(i);
+    vec2 cc=vec2(0.28+0.22*fi, 0.5+0.22*sin(fi*2.0));
+    fl+=step(0.62, fract(sin(floor(uT*2.5)+fi*7.0)*43758.5453))*exp(-pow(length(uv-cc)*8.0,2.0));
+  }
+  col+=vec3(0.7,0.82,1.0)*fl*1.6;
+  col+=vec3(1.0,0.9,0.6)*smoothstep(0.9,1.0,fbm(vec3(uv*50.0,9.0)))*0.3;
+`, {}, {bg:0x010206}); }
+
+// --- The curated list. lat/lon are accurate; lat:null marks an unpinned phenomenon. ---
+const PLANETWATCH=[
+  { key:'reef', name:'Great Barrier Reef', emoji:'🐠', lat:-18.2, lon:147.7, tag:'Natural wonder', standoff:1.8,
+    blurb:`The largest living structure on Earth — 2,300 km of coral tracing the Queensland coast. From orbit astronauts pick out the bright turquoise shallows against the deep blue of the Coral Sea.`, build:buildReefScene },
+  { key:'everest', name:'Himalayas & Everest', emoji:'🏔️', lat:27.99, lon:86.93, tag:'Natural wonder', standoff:1.9,
+    blurb:`The planet's highest mountains — a 2,400 km wall of snow and rock. The white ridgelines stand out instantly from orbit against the brown Tibetan Plateau, with Everest at their crest.` },
+  { key:'canyon', name:'Grand Canyon', emoji:'🏜️', lat:36.1, lon:-112.1, tag:'Natural wonder', standoff:1.7,
+    blurb:`A mile-deep, 446 km gash carved by the Colorado River. Its branching side-canyons and layered red rock are clearly traceable from low orbit.`, build:buildCanyonScene },
+  { key:'richat', name:'Richat Structure', emoji:'🎯', lat:21.1, lon:-11.4, tag:'Eye of the Sahara', standoff:1.7,
+    blurb:`A 40 km bullseye of concentric ridges in the Mauritanian desert — so striking from above that early astronauts used the "Eye of the Sahara" as a landmark. Eroded uplifted rock, not an impact crater.`, build:buildRichatScene },
+  { key:'baikal', name:'Lake Baikal', emoji:'🧊', lat:53.5, lon:108.2, tag:'Natural wonder', standoff:1.9,
+    blurb:`The world's deepest and oldest lake, holding a fifth of the planet's unfrozen fresh water. In winter it freezes into a vast sheet of clear, cracked ice visible from orbit.` },
+  { key:'nile', name:'The Nile & Delta', emoji:'🌃', lat:30.5, lon:31.2, tag:'River of life', standoff:1.7,
+    blurb:`A thin green ribbon of life threading through desert and fanning into the Nile Delta. At night it is unmistakable — a glowing river of city lights in a sea of black.`, build:buildNileNightScene },
+  { key:'amazon', name:'Amazon River & Basin', emoji:'🌳', lat:-2.5, lon:-59, tag:'River of life', standoff:1.85,
+    blurb:`The greatest river on Earth by volume, braiding through the rainforest that helps produce the planet's oxygen. Astronauts trace its meanders and crescent oxbow lakes across an unbroken green basin.`, build:buildAmazonScene },
+  { key:'bahamas', name:'Bahamas — Tongue of the Ocean', emoji:'🩵', lat:24.4, lon:-77.8, tag:'Turquoise shallows', standoff:1.7,
+    blurb:`Surreal bands of turquoise over white carbonate sand, split by the deep-blue "Tongue of the Ocean" trench — often called the most beautiful sight from the ISS.`, build:buildBahamasScene },
+  { key:'uyuni', name:'Salar de Uyuni', emoji:'🪞', lat:-20.1, lon:-67.5, tag:"World's largest mirror", standoff:1.75,
+    blurb:`The largest salt flat on Earth, 10,000 sq km of blinding white. After rain a thin sheet of water turns it into the world's biggest mirror, reflecting the sky so perfectly the horizon vanishes.`, build:buildSalarScene },
+  { key:'betsiboka', name:'Betsiboka River', emoji:'🩸', lat:-16.0, lon:46.3, tag:'Bleeding delta', standoff:1.75,
+    blurb:`In Madagascar, blood-red sediment from deforested hills bleeds down the Betsiboka into the sea — a vivid, sobering swirl of red into blue that astronauts have photographed for decades.`, build:buildBetsibokaScene },
+  { key:'greenland', name:'Greenland Ice Sheet', emoji:'❄️', lat:72, lon:-40, tag:'Continental ice', standoff:2.1,
+    blurb:`A 1.7 million sq km dome of ice up to 3 km thick. From orbit its crevasse fields, meltwater rivers and the icebergs calving from its fjords are all visible.` },
+  { key:'sahara', name:'Sahara Sand Seas', emoji:'🏜️', lat:23, lon:12, tag:'Endless dunes', standoff:2.0,
+    blurb:`The great dune fields (ergs) of the Sahara ripple to the horizon. In low, raking sunlight the parallel dune crests throw long shadows astronauts can resolve from orbit.` },
+  { key:'palm', name:'Palm Jumeirah, Dubai', emoji:'🌴', lat:25.11, lon:55.14, tag:'Human-made', standoff:1.65,
+    blurb:`An artificial palm-shaped archipelago built out into the Persian Gulf from dredged sand — one of the few human structures whose deliberate shape is obvious from orbit.` },
+  { key:'pyramids', name:'Pyramids of Giza', emoji:'🔺', lat:29.98, lon:31.13, tag:'Human-made', standoff:1.6,
+    blurb:`The 4,500-year-old pyramids sit at the edge of Cairo's sprawl. Tiny from orbit, but they show up in high-resolution astronaut photography beside the sharp desert–city boundary.` },
+  { key:'almeria', name:'Almería Greenhouses', emoji:'🪟', lat:36.78, lon:-2.69, tag:'Sea of plastic', standoff:1.7,
+    blurb:`A 350 sq km expanse of plastic greenhouses in southern Spain — so reflective it shows up as a bright white patch from orbit, and is thought to slightly cool its own local climate.` },
+  { key:'pivot', name:'Center-Pivot Irrigation', emoji:'🟢', lat:37.5, lon:-100.8, tag:'Crop circles', standoff:1.8,
+    blurb:`Perfect green discs of irrigated crops stamp the US High Plains — each watered by a rotating sprinkler arm. The geometric circles are an instant giveaway of human agriculture from orbit.` },
+  { key:'korea', name:'Korean Peninsula at Night', emoji:'🌗', lat:38.3, lon:127.0, tag:'City lights', standoff:1.8,
+    blurb:`The starkest human contrast visible from space: brightly lit South Korea blazes with city lights while North Korea is almost entirely dark, save for a pinprick at Pyongyang.`, build:buildKoreaNightScene },
+  { key:'greatwall', name:'Great Wall of China', emoji:'🧱', lat:40.43, lon:116.57, tag:'Myth-buster', standoff:1.7,
+    blurb:`Myth correction: the Great Wall is essentially NOT visible to the unaided eye from orbit. It is long but only a few metres wide and the same colour as the land around it, so it blends in — astronauts need a zoom lens and good light to find it at all.` },
+  { key:'hurricane', name:'Hurricane Eye', emoji:'🌀', lat:null, lon:null, tag:'Dynamic phenomenon',
+    blurb:`A rotating spiral of cloud hundreds of kilometres across, with a calm, clear eye at its centre that astronauts can look straight down to the ocean below. (A representative scene, not live storm data.)`, build:buildHurricaneScene },
+  { key:'aurora', name:'Aurora from Orbit', emoji:'🟢', lat:null, lon:null, tag:'Dynamic phenomenon',
+    blurb:`From the ISS the aurora is a curtain of green and red light rippling 100–300 km below the station, draped over the night side of Earth. (A representative scene — see the Aurora layer for live placement.)`, build:buildAuroraOrbitScene },
+  { key:'volcano', name:'Volcanic Eruption Plume', emoji:'🌋', lat:null, lon:null, tag:'Dynamic phenomenon',
+    blurb:`An ash-and-steam column punching up from a volcano, casting a long shadow across the cloud deck. Astronauts have caught eruptions in the act from orbit. (A representative scene.)`, build:buildVolcanoScene },
+  { key:'lightning', name:'Lightning Storms at Night', emoji:'⚡', lat:null, lon:null, tag:'Dynamic phenomenon',
+    blurb:`After dark, thunderstorm cells flicker like camera flashes across whole continents — the ISS crew sees dozens of storms lighting up at once from above. (A representative scene.)`, build:buildLightningScene },
+];
+const PLANETWATCH_DIORAMAS=PLANETWATCH.filter(p=>p.build);
+
+// --- Pin layer: small markers + clickable labels, riding earthGroup. ---
+const planetGroup=new THREE.Group(); planetGroup.visible=false; earthGroup.add(planetGroup);
+const _PLPIN_GEO=new THREE.SphereGeometry(0.012,10,10), _PLPIN_MAT=new THREE.MeshBasicMaterial({ color:0x46e08a });
+function planetwatchPin(item){
+  const phi=item.lat*Math.PI/180, lam=item.lon*Math.PI/180, cp=Math.cos(phi);
+  const v=new THREE.Vector3(cp*Math.cos(lam), Math.sin(phi), -cp*Math.sin(lam)).multiplyScalar(1.004);
+  const pin=new THREE.Mesh(_PLPIN_GEO,_PLPIN_MAT); pin.position.copy(v); planetGroup.add(pin); item._anchor=pin;
+  const el=document.createElement('div'); el.className='place-label'; el.textContent=(item.emoji||'🌍')+' '+item.name;
+  el.addEventListener('click', e=>{ e.stopPropagation(); visitPlace(item); });
+  const lbl=new CSS2DObject(el); lbl.position.copy(v); planetGroup.add(lbl); skyLabels.push(lbl);
+}
+PLANETWATCH.forEach(item=>{ if(item.lat!=null) planetwatchPin(item); });
+
+// --- Nav group: a master pin toggle + one button per curated item. ---
+(function buildPlanetwatchNav(){
+  const host=document.getElementById('place-items'); if(!host) return;
+  const pins=document.getElementById('place-pins');
+  pins.addEventListener('click', function(){ const on=!planetGroup.visible; planetGroup.visible=on; this.classList.toggle('active', on); });
+  PLANETWATCH.forEach(item=>{
+    const b=document.createElement('button'); b.className='sky'; b.textContent=(item.emoji||'🌍')+' '+item.name;
+    b.dataset.tip=item.blurb;
+    b.addEventListener('click', ()=>{ if(typeof hideIntro==='function') hideIntro(); visitPlace(item); });
+    host.appendChild(b);
+  });
+})();
+
+// --- Tier-1 "visit on globe": pin the camera above the live world position. ---
+let pwVisit=null;
+const _pwP=new THREE.Vector3(), _pwUp=new THREE.Vector3(), _pwT=new THREE.Vector3(), _pwDes=new THREE.Vector3(), _PWUP=new THREE.Vector3(0,1,0);
+function visitPlace(item){
+  if(typeof exitFocus==='function') exitFocus(); if(typeof exitRide==='function') exitRide();
+  if(item.lat!=null && !planetGroup.visible){ planetGroup.visible=true; const pb=document.getElementById('place-pins'); if(pb) pb.classList.add('active'); }
+  selection={ kind:'place', item }; selEl.textContent=item.name;
+  hudDist=()=>({ mi:0, name:'📍 '+item.name });
+  showInfo({ tag:item.tag||'Earth from space', name:item.name, text:item.blurb });
+  if(item.lat==null || !item._anchor){ enterDiorama('planet', item); return; }   // unpinned phenomenon -> straight to its diorama
+  pwVisit={ item, anchor:item._anchor, standoff:item.standoff||1.95 };
+  flyDir=null; controls.enabled=false;
+}
+function exitPwVisit(){ if(!pwVisit) return; pwVisit=null; controls.enabled=true; controls.target.set(0,0,0);
+  targetDist=THREE.MathUtils.clamp(camera.position.length(), MIND, MAXD); }
+function updatePwVisit(dt){
+  pwVisit.anchor.getWorldPosition(_pwP);
+  _pwUp.copy(_pwP).normalize();
+  _pwT.copy(_PWUP).cross(_pwUp); if(_pwT.lengthSq()<1e-6) _pwT.set(1,0,0); _pwT.normalize();
+  const s=pwVisit.standoff;
+  _pwDes.copy(_pwUp).multiplyScalar(s).addScaledVector(_pwT, s*0.32).addScaledVector(_PWUP, s*0.10);
+  camera.position.lerp(_pwDes, 1-Math.exp(-dt*2.6));
+  camera.lookAt(_pwP); controls.target.copy(_pwP);
+}
+function planetwatchSearch(ql){
+  const it = PLANETWATCH.find(x=>x.name.toLowerCase()===ql || x.key===ql)
+    || PLANETWATCH.find(x=>x.name.toLowerCase().startsWith(ql))
+    || (ql.length>=4 ? PLANETWATCH.find(x=>x.name.toLowerCase().includes(ql) || (x.tag&&x.tag.toLowerCase().includes(ql))) : null);
+  if(it){ visitPlace(it); return it.name; }
+  return null;
+}
+
 // ---------- Loop ----------
 let last=performance.now();
 let lastPlanetUpd=-1e9;   // forces updatePlanets on the first frame
@@ -3237,6 +3494,7 @@ function tick(now){
     } else { controls.target.copy(_focusTmp); controls.update(); }   // then orbit it freely (pivot stays exactly on the body)
     selMarker.visible=false;
   }
+  else if(pwVisit){ updatePwVisit(dt); }                                                       // Planetwatch: pinned above a landmark as Earth turns
   else { applyZoom(dt); controls.update(); }
   // HUD readout: whatever is selected shows ITS distance from Earth; else camera altitude.
   const hf = hudDist && hudDist();
