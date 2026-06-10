@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.35">
+<meta name="app-rev" content="3.36">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -2426,7 +2426,7 @@ function buildCloud(tles){
         vec4 mv=modelViewMatrix*vec4(position,1.0);
         gl_PointSize=clamp(size*uVH/(-mv.z), 0.85, 16.0); gl_Position=projectionMatrix*mv; }`,
     fragmentShader:`uniform sampler2D uTex; varying vec3 vC;
-      void main(){ vec4 tx=texture2D(uTex,gl_PointCoord); if(tx.a<0.2) discard; gl_FragColor=vec4(vC, tx.a); }`,
+      void main(){ vec4 tx=texture2D(uTex,gl_PointCoord); if(tx.a<0.2) discard; gl_FragColor=vec4(vC, tx.a*0.6); }`,
     transparent:true, vertexColors:true, depthWrite:false });
   cloud=new THREE.Points(geo, mat); cloud.frustumCulled=false; scene.add(cloud);
 }
