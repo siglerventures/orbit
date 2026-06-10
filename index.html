@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.37">
+<meta name="app-rev" content="3.38">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -2626,7 +2626,13 @@ function showInfo(d){
 }
 function deselect(){ infoEl.classList.remove('show'); selection=null; hudDist=null; if(typeof exitFocus==='function') exitFocus(); if(typeof exitRide==='function') exitRide(); }
 document.getElementById('infoClose').addEventListener('click', deselect);
+// A drag to orbit the camera ends in a synthetic 'click'; remember where the
+// press started so we can tell a real click (pick/deselect) from a drag (which
+// must leave the current selection alone, so you can spin around a body/sat).
+let _downX=0, _downY=0;
+canvas.addEventListener('pointerdown', e=>{ _downX=e.clientX; _downY=e.clientY; });
 canvas.addEventListener('click', e=>{
+  if(Math.hypot(e.clientX-_downX, e.clientY-_downY) > 6) return;   // moved -> it was a drag, keep selection
   ndc.x=(e.clientX/innerWidth)*2-1; ndc.y=-(e.clientY/innerHeight)*2+1;
   ray.setFromCamera(ndc,camera);
   const meshHit=ray.intersectObjects(pickables,false)[0];
