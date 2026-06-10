@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.32">
+<meta name="app-rev" content="3.33">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -99,6 +99,10 @@ document.addEventListener('DOMContentLoaded', function(){
     background:rgba(10,16,28,0.78); backdrop-filter:blur(10px); border:1px solid rgba(120,160,210,0.3);
     border-radius:12px; box-shadow:0 6px 26px rgba(0,0,0,0.5); }
   #tourbar.show { display:flex; }
+  #infoCloseup { display:none; margin-top:10px; width:100%; background:rgba(78,163,255,0.16); color:var(--accent);
+    border:1px solid rgba(78,163,255,0.5); border-radius:8px; padding:7px 0; font-size:12px; cursor:pointer;
+    transition:background .15s, color .15s; }
+  #infoCloseup:hover { background:rgba(78,163,255,0.35); color:#fff; }
   /* Stellar diorama */
   #diorama { position:fixed; inset:0; z-index:75; display:none; pointer-events:none; }
   #diorama.show { display:block; }
@@ -474,6 +478,7 @@ document.addEventListener('DOMContentLoaded', function(){
     <span class="tag" id="infoTag"></span>
     <h3 id="infoName"></h3>
     <p id="infoText"></p>
+    <button id="infoCloseup" title="Fly into an immersive close-up of this spacecraft">🔭 View close-up</button>
   </div>
 
 <script type="importmap">
@@ -1725,6 +1730,124 @@ function buildAuroraScene(){
   dioAdd(curtain(240,50,380,3.1,new THREE.Color(0.3,1.0,0.55)));
   return { fixed:true, look:_V(0,200,-300) };
 }
+// ===================== 🛰️ Satellite dioramas =====================
+// Same engine, keyed by spacecraft CLASS (the cloud is thousands of identical
+// points). A curated list mirrors STARS; an Earth limb sized to the orbit sells
+// the altitude. Models are stylized impressions built from primitives + bloom.
+function makeDioEarth(orbit, sunDir){
+  const cfg=({ LEO:{R:380,y:-405}, MEO:{R:300,y:-740}, GEO:{R:200,y:-1180} })[orbit] || { R:380,y:-405 };
+  const g=new THREE.Group();
+  const mat=_track(new THREE.MeshPhongMaterial({ map:dayTex, specularMap:specTex, normalMap:normTex,
+    normalScale:new THREE.Vector2(0.7,0.7), specular:new THREE.Color(0x2a3a55), shininess:14 }));
+  const usun={ value:sunDir.clone() };
+  mat.onBeforeCompile=(sh)=>{ sh.uniforms.uNightMap={value:nightTex}; sh.uniforms.uSunDir=usun;
+    sh.vertexShader='varying vec3 vWN;\n'+sh.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\n  vWN=mat3(modelMatrix)*normal;');
+    sh.fragmentShader='uniform sampler2D uNightMap;\nuniform vec3 uSunDir;\nvarying vec3 vWN;\n'+sh.fragmentShader.replace('#include <emissivemap_fragment>',
+      `#include <emissivemap_fragment>
+       float dsun=dot(normalize(vWN),normalize(uSunDir)); float night=smoothstep(0.10,-0.18,dsun);
+       totalEmissiveRadiance+=texture2D(uNightMap,vMapUv).rgb*night*1.7;`); };
+  g.add(new THREE.Mesh(_track(new THREE.SphereGeometry(cfg.R,96,96)), mat));
+  g.add(new THREE.Mesh(_track(new THREE.SphereGeometry(cfg.R*1.004,64,64)),
+    _track(new THREE.MeshPhongMaterial({ map:cloudTex, transparent:true, opacity:0.55, depthWrite:false }))));
+  g.add(new THREE.Mesh(_track(new THREE.SphereGeometry(cfg.R*1.03,64,64)),     // atmosphere rim
+    _track(new THREE.ShaderMaterial({ transparent:true, blending:THREE.AdditiveBlending, side:THREE.BackSide, depthWrite:false, uniforms:{uSunDir:usun},
+      vertexShader:`varying vec3 vN; varying vec3 vWP; void main(){ vN=normalize(mat3(modelMatrix)*normal); vWP=(modelMatrix*vec4(position,1.0)).xyz; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+      fragmentShader:`varying vec3 vN; varying vec3 vWP; uniform vec3 uSunDir;
+        void main(){ vec3 vd=normalize(cameraPosition-vWP); float rim=pow(1.0-max(dot(vN,vd),0.0),2.5);
+          float lit=clamp(dot(normalize(vN),normalize(uSunDir))+0.3,0.0,1.0);
+          gl_FragColor=vec4(vec3(0.3,0.55,1.0)*rim*(0.4+lit), rim*(0.45+0.55*lit)); }`}))));
+  g.position.y=cfg.y; g.rotation.y=Math.random()*6.28; return g;
+}
+const _smat=(c,m,r,e)=>_track(new THREE.MeshStandardMaterial({ color:c, metalness:Math.min(m==null?0.3:m,0.35), roughness:r==null?0.5:r, emissive:e||0x000000, emissiveIntensity:e?0.6:0 }));   // cap metalness — no env map in the diorama scene
+const _solar=()=>_track(new THREE.MeshStandardMaterial({ color:0x16306a, metalness:0.3, roughness:0.4, emissive:0x0a1838, emissiveIntensity:0.5, side:THREE.DoubleSide }));
+function buildISS(){
+  const g=new THREE.Group();
+  for(let i=0;i<5;i++){ const m=new THREE.Mesh(_track(new THREE.CylinderGeometry(0.7,0.7,2.6,20)), _smat(0xdfe3ea,0.4,0.5)); m.rotation.x=Math.PI/2; m.position.z=(i-2)*2.7; g.add(m); }
+  const node=new THREE.Mesh(_track(new THREE.CylinderGeometry(0.7,0.7,3.4,20)), _smat(0xdfe3ea,0.4,0.5)); node.rotation.z=Math.PI/2; g.add(node);
+  g.add(new THREE.Mesh(_track(new THREE.BoxGeometry(26,0.5,0.5)), _smat(0x8a8f99,0.6,0.5)));   // truss
+  const arrays=new THREE.Group(); g.add(arrays);
+  const sol=_solar();
+  for(const x of [-11,-8,8,11]) for(const z of [-2.4,2.4]){ const p=new THREE.Mesh(_track(new THREE.BoxGeometry(7,0.06,3.6)), sol); p.position.set(x,0,z); arrays.add(p); }
+  for(const x of [-3.2,3.2]){ const r=new THREE.Mesh(_track(new THREE.BoxGeometry(3,0.05,2)), _smat(0xeef0f4,0.3,0.6)); r.position.set(x,1.5,0); r.rotation.x=0.3; g.add(r); }   // radiators
+  const am=_smat(0x9aa0aa,0.6,0.5);
+  const a1=new THREE.Mesh(_track(new THREE.CylinderGeometry(0.18,0.18,3,10)), am); a1.position.set(2,0.6,3.6); a1.rotation.z=0.6; g.add(a1);
+  const a2=new THREE.Mesh(_track(new THREE.CylinderGeometry(0.16,0.16,2.4,10)), am); a2.position.set(3.3,1.5,4.3); a2.rotation.z=-0.7; g.add(a2);
+  const drg=new THREE.Group(), dm=_smat(0xe8eaee,0.3,0.6);
+  drg.add(new THREE.Mesh(_track(new THREE.CylinderGeometry(0.55,0.62,1.2,18)), dm));
+  const dn=new THREE.Mesh(_track(new THREE.ConeGeometry(0.55,0.7,18)), dm); dn.position.y=0.9; drg.add(dn);
+  drg.rotation.x=Math.PI/2; drg.position.set(0,0,-6.6); g.add(drg);
+  g.rotation.y=0.5; dioAdd(g);
+  dioUpdaters.push((t)=>{ arrays.rotation.x=t*0.06; });   // arrays slowly sun-track
+  return { radius:34, height:8, target:_V(0,0,0), rate:0.05 };
+}
+function buildStarlink(){
+  const g=new THREE.Group();
+  g.add(new THREE.Mesh(_track(new THREE.BoxGeometry(4,0.4,2.6)), _smat(0x2b2f36,0.6,0.4)));            // flat-pack bus
+  const ant=new THREE.Mesh(_track(new THREE.BoxGeometry(3.6,0.12,2.2)), _smat(0x0e151d,0.4,0.5,0x123a6a)); ant.position.y=-0.32; g.add(ant);   // phased array (Earthward)
+  const wing=new THREE.Mesh(_track(new THREE.BoxGeometry(9,0.05,2.4)), _solar()); wing.position.set(6.6,0.3,0); g.add(wing);
+  g.rotation.y=0.3; dioAdd(g);
+  const lasers=[];
+  for(const np of [_V(46,8,-34), _V(-50,-6,20)]){
+    dioAdd(glowPoint(0xcfe0ff, 5, np));
+    const lg=_track(new THREE.BufferGeometry()); lg.setAttribute('position', new THREE.Float32BufferAttribute([0,0,0, np.x,np.y,np.z],3));
+    const lm=_track(new THREE.LineBasicMaterial({ color:0xff3a4a, transparent:true, opacity:0, blending:THREE.AdditiveBlending, depthWrite:false }));
+    dioAdd(new THREE.Line(lg,lm)); lasers.push(lm);
+  }
+  dioUpdaters.push((t)=>{ lasers.forEach((lm,i)=>{ lm.opacity=0.25+0.7*Math.abs(Math.sin(t*2.2+i*1.7)); }); });
+  return { radius:30, height:6, target:_V(0,0,0), rate:0.06 };
+}
+function buildGenericBus(ctx){
+  const tint=({ LEO:0x8fb0d8, MEO:0x9ad8a0, GEO:0xe0c080 })[(ctx&&ctx.orbit)||'LEO'] || 0x9aa0aa;
+  const g=new THREE.Group();
+  g.add(new THREE.Mesh(_track(new THREE.BoxGeometry(2.4,2,2.2)), _smat(tint,0.6,0.45)));
+  for(const s of [-1,1]){ const w=new THREE.Mesh(_track(new THREE.BoxGeometry(5,0.05,2)), _solar()); w.position.set(s*4,0,0); g.add(w); }
+  const dish=new THREE.Mesh(_track(new THREE.SphereGeometry(1,18,12,0,Math.PI*2,0,Math.PI/2.4)), _smat(0xd8dade,0.4,0.5)); dish.material.side=THREE.DoubleSide;
+  dish.rotation.x=Math.PI; dish.position.y=-1.4; g.add(dish);
+  g.rotation.y=0.4; dioAdd(g); dioUpdaters.push((t)=>{ g.rotation.y=0.4+Math.sin(t*0.1)*0.15; });
+  return { radius:22, height:5, target:_V(0,0,0), rate:0.06 };
+}
+const SAT_DIORAMAS=[
+  { key:'iss', name:'International Space Station', orbit:'LEO', build:buildISS,
+    blurb:'A football-field-sized laboratory ~250 mi up, circling Earth every ~92 minutes at 17,500 mph. Continuously crewed since 2000, it is the largest structure humans have ever assembled in orbit — a truss of eight solar arrays and pressurized modules from five space agencies.' },
+  { key:'starlink', name:'Starlink', orbit:'LEO', build:buildStarlink,
+    blurb:'One of thousands of flat-packed broadband satellites in low orbit. A single unfolded solar wing powers a phased-array antenna beaming internet to the ground, while laser links cross-connect neighbours in space — keeping latency near 25 ms.' },
+  { key:'generic', name:'Spacecraft', orbit:'LEO', build:buildGenericBus,
+    blurb:'A typical satellite bus — a boxy body packed with electronics, two solar wings for power, and a steerable dish for its mission: communications, navigation, weather or reconnaissance.' },
+];
+const SAT_BY_KEY={}; SAT_DIORAMAS.forEach(e=>SAT_BY_KEY[e.key]=e);
+function satLiveLine(sel){ try{ return sel.kind==='cloud' ? describeCloud(sel.idx).text : describeRec(sel).text; }catch(_){ return ''; } }
+function satCardText(entry){
+  const c=entry._ctx||{}; let txt=entry.blurb;
+  const live=c.sel?satLiveLine(c.sel):''; if(live) txt+='  '+live;
+  if(entry.key==='iss') txt+='  Typically around 7 astronauts are aboard.';
+  return txt;
+}
+function buildSatScene(entry){
+  dioScene.background=new THREE.Color(0x01030a);
+  dioAdd(makeBG(1400,2400,{}));
+  const sunDir=_V(0.6,0.4,0.55).normalize();
+  const dl=new THREE.DirectionalLight(0xfff6ec,3.0); dl.position.copy(sunDir); dioAdd(dl); dioAdd(new THREE.AmbientLight(0x16243c,0.85));
+  const orbit=(entry._ctx&&entry._ctx.orbit)||entry.orbit||'LEO';
+  dioAdd(makeDioEarth(orbit, sunDir));
+  const cam=entry.build({ sunDir, orbit })||{};
+  if(entry._ctx && entry._ctx.sel && entry._ctx.sel.kind==='rec'){ let acc=0;   // live-tick the tracked ISS card
+    dioUpdaters.push((t,dt)=>{ acc-=dt; if(acc<=0){ acc=1; dioText.textContent=satCardText(entry); } }); }
+  return Object.assign({ radius:30, height:7, target:_V(0,0,0), rate:0.05 }, cam);
+}
+function resolveSatEntry(sel){
+  if(sel.kind==='rec' && (sel.id===25544 || /\bISS\b/i.test(sel.name||''))) return SAT_BY_KEY.iss;
+  const short = sel.kind==='cloud' ? ((cloudMeta[sel.idx]&&cloudMeta[sel.idx].short)||'') : '';
+  if(short==='Starlink') return SAT_BY_KEY.starlink;
+  return SAT_BY_KEY.generic;
+}
+function openSatDiorama(){
+  if(!selection || !(selection.kind==='cloud'||selection.kind==='rec')) return;
+  const sel=selection, entry=resolveSatEntry(sel);
+  let alt=0; try{ alt = sel.kind==='cloud'?cloudAltMi(sel.idx):recAltMi(sel.satrec); }catch(_){ }
+  const name = sel.kind==='cloud' ? ((cloudMeta[sel.idx]&&cloudMeta[sel.idx].name)||'') : (sel.name||'');
+  entry._ctx={ sel, alt, name, orbit: alt>21000?'GEO':(alt>2000?'MEO':'LEO') };
+  enterDiorama('sat', entry);
+}
 function clearDiorama(){
   for(const o of dioScene.children.slice()) dioScene.remove(o);
   for(const d of dioDispose){ try{ d.dispose && d.dispose(); }catch(_){ } }
@@ -1732,13 +1855,14 @@ function clearDiorama(){
 }
 const MILKYWAY={ name:'The Milky Way', tag:'Our galaxy', fact:'A barred spiral of 100–400 billion stars, ~100,000 light-years across — and we live inside it, about halfway out on the Orion Arm. The hazy band across the night sky is its disk seen edge-on from within; the brightest, busiest stretch lies toward the galactic centre in Sagittarius.' };
 const AURORA={ name:'Aurora', tag:'Northern & southern lights', fact:'When charged particles from the Sun slam into the upper atmosphere and follow Earth’s magnetic field to the poles, they make oxygen and nitrogen glow — green and red from oxygen, blue and violet from nitrogen — rippling in vast curtains 100–300 km overhead.' };
-const DIO_LISTS={ star:STARS, const:CONSTELLATIONS, shower:SHOWERS, comet:COMETS, asteroid:ASTEROIDS, milkyway:[MILKYWAY], aurora:[AURORA] };
+const DIO_LISTS={ star:STARS, const:CONSTELLATIONS, shower:SHOWERS, comet:COMETS, asteroid:ASTEROIDS, milkyway:[MILKYWAY], aurora:[AURORA], sat:SAT_DIORAMAS };
 function dioMeta(kind,o){
   if(kind==='const')    return { title:o.name, tag:'Constellation', text:o.fact };
   if(kind==='shower')   return { title:o.name, tag:'Meteor shower', text:'When Earth ploughs through dust shed by '+o.src+', up to ~'+o.zhr+' meteors an hour appear to rain from this point in '+(o.name)+'. The "shooting stars" are sand- to pebble-sized grains burning up ~80 km overhead at tens of thousands of mph.' };
   if(kind==='comet')    return { title:o.name, tag:'Comet', text:o.fact };
   if(kind==='asteroid') return { title:o.name, tag:'Asteroid', text:o.fact };
   if(kind==='milkyway'||kind==='aurora') return { title:o.name, tag:o.tag, text:o.fact };
+  if(kind==='sat'){ const c=o._ctx||{}; return { title:c.name && c.name!==o.name ? o.name+' — '+c.name : o.name, tag:c.orbit||o.orbit||'Satellite', text:satCardText(o) }; }
   return { title:o.name, tag:o.tag||'Star', text:o.fact };   // star
 }
 function buildScene(kind,o){
@@ -1748,6 +1872,7 @@ function buildScene(kind,o){
   if(kind==='asteroid') return buildAsteroidScene(o);
   if(kind==='milkyway') return buildMilkyWayScene();
   if(kind==='aurora')   return buildAuroraScene();
+  if(kind==='sat')      return buildSatScene(o);
   return buildStarScene(o);
 }
 let dioKind='star', dioList=STARS;
@@ -1769,7 +1894,9 @@ function exitDiorama(){
   document.body.classList.remove('dio-on'); dioramaEl.classList.remove('show');
   labelRenderer.domElement.style.display='';
 }
-function dioGo(delta){ const n=dioList.length; if(n<2) return; enterDiorama(dioKind, dioList[((dioIdx+delta)%n+n)%n]); }
+function dioGo(delta){ const n=dioList.length; if(n<2) return; const next=dioList[((dioIdx+delta)%n+n)%n];
+  if(dioKind==='sat' && next) next._ctx=null;   // hopping a curated list: drop any prior live-selection context
+  enterDiorama(dioKind, next); }
 function updateDiorama(dt){
   dioT+=dt; const c=dioCamCfg;
   if(c.fixed){                                   // ground-based scenes (showers, aurora): look up, gentle sway
@@ -2478,10 +2605,13 @@ function applyMorph(){
 // ---------- Picking ----------
 const ray=new THREE.Raycaster(); ray.params.Points.threshold=0.03;
 const ndc=new THREE.Vector2(); const infoEl=document.getElementById('info');
+const closeupBtn=document.getElementById('infoCloseup');
+closeupBtn.addEventListener('click', openSatDiorama);
 function showInfo(d){
   document.getElementById('infoTag').textContent=d.tag||'';
   document.getElementById('infoName').textContent=d.name||'';
   document.getElementById('infoText').textContent=d.text||'';
+  closeupBtn.style.display = (selection && (selection.kind==='cloud' || selection.kind==='rec')) ? 'block' : 'none';
   infoEl.classList.add('show');
 }
 function deselect(){ infoEl.classList.remove('show'); selection=null; hudDist=null; if(typeof exitFocus==='function') exitFocus(); if(typeof exitRide==='function') exitRide(); }
