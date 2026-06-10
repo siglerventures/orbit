@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.31">
+<meta name="app-rev" content="3.32">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -1241,7 +1241,7 @@ const CSTAR_BASE=4.2, CSTAR_HI=14;
     const cen=new THREE.Vector3(); vs.forEach(v=>cen.add(v)); cen.multiplyScalar(1/vs.length).setLength(SKY_R*0.99);
     c._cen=cen;
     const el=document.createElement('div'); el.className='const-label'; el.textContent=c.name;
-    el.addEventListener('click', e=>{ e.stopPropagation(); selectConstellation(c); });
+    el.addEventListener('click', e=>{ e.stopPropagation(); enterDiorama('const', c); });
     const lbl=new CSS2DObject(el); lbl.position.copy(cen); constGroup.add(lbl); skyLabels.push(lbl);
   }
   const g=new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(verts,3));
@@ -1333,6 +1333,7 @@ let dioActive=false, dioT=0, dioOrbit=0, dioIdx=0, dioCamCfg=null;
 let dioUpdaters=[], dioDispose=[];
 const dioramaEl=document.getElementById('diorama');
 const dioName=document.getElementById('dioName'), dioTag=document.getElementById('dioTag'), dioText=document.getElementById('dioText');
+const dioPrevBtn=document.getElementById('dioPrev'), dioNextBtn=document.getElementById('dioNext');
 function _radialTex(stops){
   const c=document.createElement('canvas'); c.width=c.height=128; const g=c.getContext('2d');
   const grd=g.createRadialGradient(64,64,0,64,64,64); stops.forEach(s=>grd.addColorStop(s[0],s[1]));
@@ -1493,7 +1494,7 @@ function lensArc(R, a0, a1, tilt, color, thick){
 }
 const _V=(x,y,z)=>new THREE.Vector3(x,y,z);
 // Compose the scene for one star; returns the camera config.
-function buildDiorama(st){
+function buildStarScene(st){
   dioScene.background=new THREE.Color(0x02030a);
   const cam={ radius:120, height:18, target:_V(0,0,0), rate:0.05 };
   switch(st.name){
@@ -1581,17 +1582,184 @@ function buildDiorama(st){
   }
   return cam;
 }
+// ---- shared helpers for the non-star scenes ----
+function _hash(i){ const x=Math.sin(i*127.1+0.37)*43758.5453; return x-Math.floor(x); }
+function makeLines(pairs, color, opacity){
+  const v=[]; for(const [a,b] of pairs){ v.push(a.x,a.y,a.z, b.x,b.y,b.z); }
+  const g=_track(new THREE.BufferGeometry()); g.setAttribute('position', new THREE.Float32BufferAttribute(v,3));
+  const m=_track(new THREE.LineBasicMaterial({ color:new THREE.Color(color), transparent:true, opacity:opacity||0.4, blending:THREE.AdditiveBlending, depthWrite:false }));
+  return new THREE.LineSegments(g,m);
+}
+// Constellation — its stars as 3D suns at varying depths (revealing they aren't
+// physically grouped), joined by glowing figure lines, with a signature deep-sky
+// object for the famous ones.
+const CONST_THEME={ Orion:0xffd2b0,'Ursa Major':0xcfe0ff,Cassiopeia:0xfff0d0,Cygnus:0xcfe6ff,Leo:0xfff2cf,
+  Scorpius:0xffb9a0,Crux:0xcfe0ff,Taurus:0xffe2c0,Gemini:0xeae0ff,'Canis Major':0xdfeaff,Lyra:0xd8e6ff,'Boötes':0xffe0b0 };
+function buildConstScene(c){
+  dioScene.background=new THREE.Color(0x03040c);
+  dioAdd(makeBG(1800,2000,{}));
+  const pts=c.stars.map((s,i)=>raDecVec(s[0],s[1],1).normalize().multiplyScalar(150+_hash(i+1)*230));
+  const cen=new THREE.Vector3(); pts.forEach(p=>cen.add(p)); cen.multiplyScalar(1/pts.length);
+  pts.forEach((p,i)=>{ const w=_hash(i*3+2); const col=w<0.4?0xffd2a0:(w<0.75?0xffffff:0xbcd2ff);
+    dioAdd(glowPoint(col, 14+_hash(i*5+1)*24, p)); });
+  dioAdd(makeLines(c.lines.map(([a,b])=>[pts[a],pts[b]]), CONST_THEME[c.name]||0xbcd2ff, 0.5));
+  dioAdd(makeNebula({ colors:[CONST_THEME[c.name]||0x335a9a,0x223a6a], count:10, R:300, size:200, opacity:0.05 }));
+  if(c.name==='Orion'){ const n=makeNebula({colors:[0xff6a9a,0xffa86a,0x6a9aff],count:14,R:45,size:80,opacity:0.16}); n.position.copy(raDecVec(83.82,-5.39,1).multiplyScalar(175)); dioAdd(n); }
+  if(c.name==='Taurus'){ const pc=raDecVec(56.87,24.11,1).multiplyScalar(160);
+    for(let i=0;i<9;i++) dioAdd(glowPoint(0xbcd6ff, 10+Math.random()*10, pc.clone().add(_V((Math.random()*2-1)*20,(Math.random()*2-1)*20,(Math.random()*2-1)*20))));
+    const n=makeNebula({colors:[0x4a6aff,0x6a8aff],count:8,R:30,size:50,opacity:0.12}); n.position.copy(pc); dioAdd(n); }
+  if(c.name==='Lyra'){ const ring=new THREE.Mesh(_track(new THREE.TorusGeometry(10,3,16,40)),
+    _track(new THREE.MeshBasicMaterial({color:0x6affc0,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,opacity:0.5})));
+    ring.position.copy(raDecVec(283.4,33.03,1).multiplyScalar(150)); dioAdd(ring); }
+  return { radius:Math.max(230, cen.length()+140), height:70, target:cen.clone(), rate:0.05 };
+}
+// Meteor shower — a dark sky with a horizon, meteors raining from the radiant.
+function buildShowerScene(s){
+  dioScene.background=new THREE.Color(0x02030a);
+  dioAdd(makeBG(1500,1900,{}));
+  const radDir=_V(0,0.4,-1).normalize();
+  dioAdd(glowPoint(0xfff0d0, 22, radDir.clone().multiplyScalar(620)));
+  const ground=new THREE.Mesh(_track(new THREE.PlaneGeometry(8000,4000)), _track(new THREE.MeshBasicMaterial({color:0x04060c})));
+  ground.rotation.x=-Math.PI/2; ground.position.y=-200; dioAdd(ground);
+  const N=46, pool=[];
+  const head=new THREE.Color(s.zhr>=100?0x9fd0ff:0xcfe6ff);
+  for(let i=0;i<N;i++){ const g=_track(new THREE.BufferGeometry()); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6),3));
+    const m=_track(new THREE.LineBasicMaterial({ color:head, transparent:true, opacity:0, blending:THREE.AdditiveBlending, depthWrite:false }));
+    const ln=new THREE.Line(g,m); ln.frustumCulled=false; dioScene.add(ln); pool.push({g,m,active:false}); }
+  let acc=0;
+  dioUpdaters.push((t,dt)=>{
+    acc-=dt;
+    if(acc<=0){ const p=pool.find(x=>!x.active);
+      if(p){ const dir=radDir.clone(); dir.x+=(Math.random()*2-1)*0.55; dir.y+=(Math.random()*2-1)*0.45; dir.z+=(Math.random()*2-1)*0.55; dir.normalize();
+        p.start=radDir.clone().multiplyScalar(560).addScaledVector(dir,30); p.vel=dir.clone().multiplyScalar(760);
+        p.life=0; p.max=0.5+Math.random()*0.7; p.active=true; }
+      acc=(0.25+Math.random()*0.6)/(s.zhr*0.02+1); }
+    for(const p of pool){ if(!p.active) continue; p.life+=dt; const f=p.life/p.max;
+      if(f>=1){ p.active=false; p.m.opacity=0; continue; }
+      const h=p.start.clone().addScaledVector(p.vel,p.life), tl=p.start.clone().addScaledVector(p.vel,Math.max(0,p.life-0.11));
+      const a=p.g.attributes.position.array; a[0]=tl.x;a[1]=tl.y;a[2]=tl.z; a[3]=h.x;a[4]=h.y;a[5]=h.z; p.g.attributes.position.needsUpdate=true;
+      p.m.opacity=Math.sin(f*Math.PI); }
+  });
+  return { fixed:true, look:radDir.clone().multiplyScalar(560) };
+}
+// Comet — a dark nucleus with jets, a glowing coma, and ion + dust tails.
+function buildCometScene(c){
+  dioScene.background=new THREE.Color(0x01020a);
+  dioAdd(makeBG(1500,2200,{}));
+  const sunDir=_V(1,0.3,0.6).normalize(), anti=sunDir.clone().multiplyScalar(-1);
+  dioAdd(glowPoint(0xfff4d0, 60, sunDir.clone().multiplyScalar(1500)));
+  const ng=_track(new THREE.IcosahedronGeometry(8,2)), np=ng.attributes.position;
+  for(let i=0;i<np.count;i++){ const f=1+(_hash(i)*0.5-0.2); np.setXYZ(i,np.getX(i)*f,np.getY(i)*f,np.getZ(i)*f); } ng.computeVertexNormals();
+  const nuc=new THREE.Mesh(ng, _track(new THREE.MeshStandardMaterial({ color:0x2a2620, roughness:1, metalness:0, flatShading:true }))); dioAdd(nuc);
+  const dl=new THREE.DirectionalLight(0xfff0e0,2.4); dl.position.copy(sunDir); dioAdd(dl); dioAdd(new THREE.AmbientLight(0x101522,0.7));
+  const coma=glowPoint(0x9fe6cc, 95, _V(0,0,0)); coma.material.opacity=0.5; dioAdd(coma);
+  const t1=new THREE.Vector3(0,1,0).cross(anti).normalize();
+  function tail(color,len,spread,count,curve){
+    const p=new Float32Array(count*3),col=new Float32Array(count*3),siz=new Float32Array(count); const cc=new THREE.Color(color);
+    for(let i=0;i<count;i++){ const f=Math.pow(Math.random(),0.6), along=f*len, off=(Math.random()*2-1)*spread*f;
+      const pp=anti.clone().multiplyScalar(along).addScaledVector(t1, off+curve*along*along*0.002);
+      p[i*3]=pp.x;p[i*3+1]=pp.y;p[i*3+2]=pp.z; const b=1-f*0.8; col[i*3]=cc.r*b;col[i*3+1]=cc.g*b;col[i*3+2]=cc.b*b; siz[i]=(1-f)*4+0.6; }
+    const sp=starPoints(p,col,siz); sp.frustumCulled=false; _track(sp.geometry); _track(sp.material); return sp;
+  }
+  dioAdd(tail(0x7ab0ff,720,16,1400,0));     // ion tail — straight, blue
+  dioAdd(tail(0xffe2a0,540,64,1900,1.0));    // dust tail — wide, curved, gold
+  for(let i=0;i<3;i++){ const j=glowPoint(0xc6ffe6, 28, sunDir.clone().multiplyScalar(14+i*6)); j.material.opacity=0.4; dioAdd(j); }
+  dioUpdaters.push((t)=>{ nuc.rotation.y=t*0.2; nuc.rotation.x=t*0.13; });
+  return { radius:120, height:28, target:_V(0,0,0), rate:0.05 };
+}
+// Asteroid belt — tumbling rocks of many sizes, a hero body in the foreground.
+function buildAsteroidScene(a){
+  dioScene.background=new THREE.Color(0x02030a);
+  dioAdd(makeBG(1400,2400,{}));
+  const sunDir=_V(0.7,0.4,0.5).normalize();
+  dioAdd(glowPoint(0xfff4d8, 44, sunDir.clone().multiplyScalar(1900)));
+  const dl=new THREE.DirectionalLight(0xfff2e0,2.6); dl.position.copy(sunDir); dioAdd(dl); dioAdd(new THREE.AmbientLight(0x0a0e18,0.7));
+  const rocks=[];
+  function rock(r,p){ const g=_track(new THREE.IcosahedronGeometry(r, r>14?2:1)), pos=g.attributes.position;
+    for(let i=0;i<pos.count;i++){ const f=1+(_hash(i+r)*0.6-0.25); pos.setXYZ(i,pos.getX(i)*f,pos.getY(i)*f,pos.getZ(i)*f); } g.computeVertexNormals();
+    const mesh=new THREE.Mesh(g, _track(new THREE.MeshStandardMaterial({ color:0x6b5f52, roughness:1, metalness:0, flatShading:true })));
+    mesh.position.copy(p); dioScene.add(mesh);
+    rocks.push({ mesh, sp:_V(Math.random()-0.5,Math.random()-0.5,Math.random()-0.5).multiplyScalar(0.6) }); }
+  rock(30, _V(-32,-6,12));
+  for(let i=0;i<60;i++) rock(2+Math.random()*10, _V((Math.random()*2-1)*230,(Math.random()*2-1)*95,(Math.random()*2-1)*230));
+  dioUpdaters.push((t,dt)=>{ for(const r of rocks){ r.mesh.rotation.x+=r.sp.x*dt; r.mesh.rotation.y+=r.sp.y*dt; r.mesh.rotation.z+=r.sp.z*dt; } });
+  return { radius:115, height:20, target:_V(0,0,0), rate:0.04 };
+}
+// The Milky Way — fly above the disk toward the glowing core.
+function buildMilkyWayScene(){
+  dioScene.background=new THREE.Color(0x01010a);
+  const N=9000, p=new Float32Array(N*3),col=new Float32Array(N*3),siz=new Float32Array(N);
+  for(let i=0;i<N;i++){ const ang=Math.random()*Math.PI*2, rr=Math.pow(Math.random(),0.5)*900;
+    const arm=Math.sin(ang*2+rr*0.012)*0.5, h=(Math.random()-0.5)*Math.max(20,120-rr*0.1)*(1+arm);
+    p[i*3]=Math.cos(ang)*rr; p[i*3+1]=h; p[i*3+2]=Math.sin(ang)*rr;
+    const core=1-rr/900, w=0.5+0.5*core+Math.random()*0.3;
+    col[i*3]=w*(0.9+core*0.1); col[i*3+1]=w*0.85; col[i*3+2]=w*(0.8+(1-core)*0.2); siz[i]=Math.random()*1.6+0.4; }
+  const sp=starPoints(p,col,siz); sp.frustumCulled=false; _track(sp.geometry); _track(sp.material); dioAdd(sp);
+  const bulge=glowPoint(0xffdca0, 330, _V(0,0,0)); bulge.material.opacity=0.7; dioAdd(bulge); dioAdd(glowPoint(0xffba60,160,_V(0,0,0)));
+  for(let i=0;i<24;i++){ const ang=Math.random()*Math.PI*2, rr=120+Math.random()*700;
+    const n=glowPoint([0xff5a8a,0x6a9aff,0x9a5aff,0xff8a4a][i%4], 60+Math.random()*120, _V(Math.cos(ang)*rr,(Math.random()-0.5)*40,Math.sin(ang)*rr)); n.material.opacity=0.10; dioAdd(n); }
+  dioAdd(makeBG(1200,2600,{}));
+  return { radius:760, height:240, target:_V(0,0,0), rate:0.025 };
+}
+// Aurora — rippling curtains of light over a dark horizon.
+function buildAuroraScene(){
+  dioScene.background=new THREE.Color(0x02040e);
+  dioAdd(makeBG(1400,1900,{}));
+  const ground=new THREE.Mesh(_track(new THREE.PlaneGeometry(9000,9000)), _track(new THREE.MeshBasicMaterial({color:0x03060c})));
+  ground.rotation.x=-Math.PI/2; ground.position.y=-130; dioAdd(ground);
+  function curtain(radius,y0,h,phase,tint){
+    const m=_track(new THREE.ShaderMaterial({ side:THREE.DoubleSide, transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
+      uniforms:{ uT:{value:0}, uTint:{value:new THREE.Color(tint)} },
+      vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
+      fragmentShader:SNOISE+`uniform float uT; uniform vec3 uTint; varying vec2 vUv;
+        void main(){ float ripple=fbm(vec3(vUv.x*9.0, uT*0.5, 0.0));
+          float band=smoothstep(0.1,0.85,0.5+0.6*ripple);
+          float vert=smoothstep(0.0,0.22,vUv.y)*(1.0-smoothstep(0.5,1.0,vUv.y));
+          vec3 c=mix(uTint, vec3(0.55,0.18,0.7), smoothstep(0.25,1.0,vUv.y));
+          gl_FragColor=vec4(c*(0.6+band), band*vert*0.85); }`}));
+    const mesh=new THREE.Mesh(_track(new THREE.CylinderGeometry(radius,radius,h,120,1,true,phase,Math.PI*0.9)), m);
+    mesh.position.y=y0; dioUpdaters.push((t)=>{ m.uniforms.uT.value=t; }); return mesh;
+  }
+  dioAdd(curtain(300,70,420,0.2,new THREE.Color(0.2,1.0,0.5)));
+  dioAdd(curtain(370,90,340,1.7,new THREE.Color(0.2,0.9,0.6)));
+  dioAdd(curtain(240,50,380,3.1,new THREE.Color(0.3,1.0,0.55)));
+  return { fixed:true, look:_V(0,200,-300) };
+}
 function clearDiorama(){
   for(const o of dioScene.children.slice()) dioScene.remove(o);
   for(const d of dioDispose){ try{ d.dispose && d.dispose(); }catch(_){ } }
   dioDispose=[]; dioUpdaters=[];
 }
-function enterDiorama(st){
+const MILKYWAY={ name:'The Milky Way', tag:'Our galaxy', fact:'A barred spiral of 100–400 billion stars, ~100,000 light-years across — and we live inside it, about halfway out on the Orion Arm. The hazy band across the night sky is its disk seen edge-on from within; the brightest, busiest stretch lies toward the galactic centre in Sagittarius.' };
+const AURORA={ name:'Aurora', tag:'Northern & southern lights', fact:'When charged particles from the Sun slam into the upper atmosphere and follow Earth’s magnetic field to the poles, they make oxygen and nitrogen glow — green and red from oxygen, blue and violet from nitrogen — rippling in vast curtains 100–300 km overhead.' };
+const DIO_LISTS={ star:STARS, const:CONSTELLATIONS, shower:SHOWERS, comet:COMETS, asteroid:ASTEROIDS, milkyway:[MILKYWAY], aurora:[AURORA] };
+function dioMeta(kind,o){
+  if(kind==='const')    return { title:o.name, tag:'Constellation', text:o.fact };
+  if(kind==='shower')   return { title:o.name, tag:'Meteor shower', text:'When Earth ploughs through dust shed by '+o.src+', up to ~'+o.zhr+' meteors an hour appear to rain from this point in '+(o.name)+'. The "shooting stars" are sand- to pebble-sized grains burning up ~80 km overhead at tens of thousands of mph.' };
+  if(kind==='comet')    return { title:o.name, tag:'Comet', text:o.fact };
+  if(kind==='asteroid') return { title:o.name, tag:'Asteroid', text:o.fact };
+  if(kind==='milkyway'||kind==='aurora') return { title:o.name, tag:o.tag, text:o.fact };
+  return { title:o.name, tag:o.tag||'Star', text:o.fact };   // star
+}
+function buildScene(kind,o){
+  if(kind==='const')    return buildConstScene(o);
+  if(kind==='shower')   return buildShowerScene(o);
+  if(kind==='comet')    return buildCometScene(o);
+  if(kind==='asteroid') return buildAsteroidScene(o);
+  if(kind==='milkyway') return buildMilkyWayScene();
+  if(kind==='aurora')   return buildAuroraScene();
+  return buildStarScene(o);
+}
+let dioKind='star', dioList=STARS;
+function enterDiorama(kind,obj){
+  if(typeof kind==='object'){ obj=kind; kind='star'; }   // back-compat
   if(typeof exitFocus==='function') exitFocus(); if(typeof exitRide==='function') exitRide();
   clearDiorama(); dioActive=true; dioT=0; dioOrbit=Math.random()*6.283;
-  dioCamCfg=buildDiorama(st); dioIdx=STARS.indexOf(st);
+  dioCamCfg=buildScene(kind,obj);
+  dioKind=kind; dioList=DIO_LISTS[kind]||[obj]; dioIdx=dioList.indexOf(obj);
   dioCam.aspect=innerWidth/innerHeight; dioCam.updateProjectionMatrix();
-  dioName.textContent=st.name; dioTag.textContent=st.tag||'Star'; dioText.textContent=st.fact;
+  const m=dioMeta(kind,obj); dioName.textContent=m.title; dioTag.textContent=m.tag; dioText.textContent=m.text;
+  const multi=dioList.length>1; dioPrevBtn.style.display=multi?'':'none'; dioNextBtn.style.display=multi?'':'none';
   document.body.classList.add('dio-on'); dioramaEl.classList.add('show');
   labelRenderer.domElement.style.display='none';
 }
@@ -1601,12 +1769,17 @@ function exitDiorama(){
   document.body.classList.remove('dio-on'); dioramaEl.classList.remove('show');
   labelRenderer.domElement.style.display='';
 }
-function dioGo(delta){ const n=STARS.length; enterDiorama(STARS[((dioIdx+delta)%n+n)%n]); }
+function dioGo(delta){ const n=dioList.length; if(n<2) return; enterDiorama(dioKind, dioList[((dioIdx+delta)%n+n)%n]); }
 function updateDiorama(dt){
-  dioT+=dt; dioOrbit+=dt*(dioCamCfg.rate||0.05);
-  const c=dioCamCfg, r=c.radius;
-  dioCam.position.set(Math.cos(dioOrbit)*r, (c.height||r*0.16)+Math.sin(dioT*0.12)*r*0.05, Math.sin(dioOrbit)*r);
-  dioCam.lookAt(c.target.x,c.target.y,c.target.z);
+  dioT+=dt; const c=dioCamCfg;
+  if(c.fixed){                                   // ground-based scenes (showers, aurora): look up, gentle sway
+    dioCam.position.set(Math.sin(dioT*0.05)*40, 6+Math.sin(dioT*0.07)*7, 60);
+    dioCam.lookAt(c.look.x,c.look.y,c.look.z);
+  } else {                                        // orbit slowly around the subject
+    dioOrbit+=dt*(c.rate||0.05); const r=c.radius, t=c.target;
+    dioCam.position.set(t.x+Math.cos(dioOrbit)*r, t.y+(c.height||r*0.16)+Math.sin(dioT*0.12)*r*0.05, t.z+Math.sin(dioOrbit)*r);
+    dioCam.lookAt(t.x,t.y,t.z);
+  }
   for(const u of dioUpdaters){ try{ u(dioT,dt); }catch(_){ } }
 }
 document.getElementById('dioBack').addEventListener('click', exitDiorama);
@@ -1656,7 +1829,7 @@ const showerItems=[];
   for(const s of SHOWERS){
     const v=raDecVec(s.ra,s.dec,SKY_R*0.99); pos.push(v.x,v.y,v.z);
     const el=document.createElement('div'); el.className='shower-label'; el.textContent=s.name;
-    el.addEventListener('click', e=>{ e.stopPropagation(); selectShower(s); });
+    el.addEventListener('click', e=>{ e.stopPropagation(); enterDiorama('shower', s); });
     const lbl=new CSS2DObject(el); lbl.position.copy(v); showerGroup.add(lbl); skyLabels.push(lbl);
     showerItems.push({ s, el, dir:v.clone().normalize() });
   }
@@ -1777,7 +1950,7 @@ const _cAxis=new THREE.Vector3(), _cQ=new THREE.Quaternion(), _cTv=new THREE.Vec
   COMETS.forEach(c=>{
     const el=document.createElement('div'); el.className='comet-label'; el.textContent='☄ '+c.name.split('/')[0];
     const item={ c, el, lbl:null };
-    el.addEventListener('click', e=>{ e.stopPropagation(); selectComet(c); });
+    el.addEventListener('click', e=>{ e.stopPropagation(); enterDiorama('comet', c); });
     const lbl=new CSS2DObject(el); cometGroup.add(lbl); item.lbl=lbl; skyLabels.push(lbl);
     cometItems.push(item);
   });
@@ -1829,14 +2002,14 @@ function skywatchSearch(ql){
     || list.find(x=>x.name.toLowerCase().startsWith(ql))
     || (ql.length>=4 ? list.find(x=>x.name.toLowerCase().includes(ql)) : null);
   let st=exact(STARS); if(st){ selectNotableStar(st); return st.name; }
-  let c=exact(CONSTELLATIONS); if(c){ selectConstellation(c); return c.name; }
+  let c=exact(CONSTELLATIONS); if(c){ enterDiorama('const', c); return c.name; }
   let m=COMETS.find(x=>{ const n=x.name.toLowerCase(); return n===ql || n.split('/').some(p=>p&&ql&&(p===ql||p.includes(ql))) || (ql.length>=4&&n.includes(ql)); });
-  if(m){ selectComet(m); return m.name; }
+  if(m){ enterDiorama('comet', m); return m.name; }
   let s=exact(SHOWERS);
   if(!s && (ql.includes('meteor')||ql.includes('shower'))){    // generic -> next upcoming shower
     const now=new Date(simNow()); s=[...SHOWERS].sort((a,b)=>showerNextPeak(a,now)-showerNextPeak(b,now))[0];
   }
-  if(s){ selectShower(s); return s.name; }
+  if(s){ enterDiorama('shower', s); return s.name; }
   return null;
 }
 
@@ -1882,7 +2055,7 @@ document.getElementById('sky-comets').addEventListener('click', function(){
 });
 document.getElementById('sky-milkyway').addEventListener('click', function(){
   if(mwGroup.visible){ toggleSky(this, mwGroup); return; }         // turn off
-  toggleSky(this, mwGroup); lookAtSky(galacticCenterDir);          // turn on + fly to the galactic centre
+  toggleSky(this, mwGroup); enterDiorama('milkyway', MILKYWAY);    // turn on + fly into the galaxy
 });
 
 // ---------- Asteroids: a belt band along the ecliptic + named bodies (live positions) ----------
@@ -1911,7 +2084,7 @@ const astItems=[]; let astPosAttr=null;
   const pos=new Float32Array(ASTEROIDS.length*3);
   ASTEROIDS.forEach(a=>{
     const el=document.createElement('div'); el.className='comet-label'; el.textContent='🪨 '+a.name;
-    el.addEventListener('click', e=>{ e.stopPropagation(); selectAsteroid(a); });
+    el.addEventListener('click', e=>{ e.stopPropagation(); enterDiorama('asteroid', a); });
     const lbl=new CSS2DObject(el); asteroidGroup.add(lbl); skyLabels.push(lbl);
     astItems.push({ a, lbl });
   });
@@ -1940,7 +2113,7 @@ document.getElementById('sky-asteroids').addEventListener('click', function(){
 
 document.getElementById('sky-aurora').addEventListener('click', function(){
   const on=!auroraGroup.visible; auroraGroup.visible=on; this.classList.toggle('active', on);
-  if(on){ deselect(); flyDir=new THREE.Vector3(0.25,0.82,0.32).normalize(); setTarget(2.7); }   // tilt up to the north pole to see it
+  if(on){ deselect(); flyDir=new THREE.Vector3(0.25,0.82,0.32).normalize(); setTarget(2.7); enterDiorama('aurora', AURORA); }   // stand beneath the lights
 });
 // Reset every Skywatch layer (used by Home).
 function resetSkywatch(){
