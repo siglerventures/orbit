@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.35">
+<meta name="app-rev" content="3.37">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -526,6 +526,11 @@ const eciToScene = (p, v) => { v.set(p.x / EARTH_KM, p.z / EARTH_KM, -p.y / EART
 const EX_C = 1000, EX_K = 5.1;
 let morph = 0, morphTarget = 0;            // 0 = true scale, 1 = exaggerated
 let morphActive = false;                   // true while easing (drives per-frame re-scale)
+// Gentle default lift of the satellite shells off the surface, so the dense LEO
+// cloud reads as a band ORBITING above Earth (with a visible gap) rather than a
+// skin painted on it. Display-only: the per-satellite altitude readout still
+// comes from the true positions, so the numbers stay honest.
+const SHELL_LIFT = 0.3;
 const exaggR = trueR => { const km = (trueR - 1) * EARTH_KM; return 1 + EX_K * Math.log10(1 + Math.max(0, km) / EX_C); };
 const displayRadiusAt = (trueR, m) => (m <= 1e-4 ? trueR : trueR + (exaggR(trueR) - trueR) * m);
 const displayRadius = trueR => displayRadiusAt(trueR, morph);
@@ -653,6 +658,7 @@ function selectionScenePos(out){
     const i=selection.idx, x=cloudCur[i*3], y=cloudCur[i*3+1], z=cloudCur[i*3+2];
     if(x!==x) return false;
     out.set(x,y,z);
+    { const r=out.length(); if(r){ const dr = morph>1e-4 ? displayRadius(r) : displayRadiusAt(r, SHELL_LIFT); out.multiplyScalar(dr/r); } }   // match the cloud's display lift so the marker sits on the dot
   } else {
     const pv=satellite.propagate(selection.satrec, new Date(simNow()));
     if(!pv || !pv.position) return false;
@@ -2426,7 +2432,7 @@ function buildCloud(tles){
         vec4 mv=modelViewMatrix*vec4(position,1.0);
         gl_PointSize=clamp(size*uVH/(-mv.z), 0.85, 16.0); gl_Position=projectionMatrix*mv; }`,
     fragmentShader:`uniform sampler2D uTex; varying vec3 vC;
-      void main(){ vec4 tx=texture2D(uTex,gl_PointCoord); if(tx.a<0.2) discard; gl_FragColor=vec4(vC, tx.a); }`,
+      void main(){ vec4 tx=texture2D(uTex,gl_PointCoord); if(tx.a<0.2) discard; gl_FragColor=vec4(vC, tx.a*0.6); }`,
     transparent:true, vertexColors:true, depthWrite:false });
   cloud=new THREE.Points(geo, mat); cloud.frustumCulled=false; scene.add(cloud);
 }
@@ -2468,7 +2474,9 @@ function updateCloud(){
     let x=cur[i], y=cur[i+1], z=cur[i+2];
     if(prev){ x=prev[i]+(x-prev[i])*alpha; y=prev[i+1]+(y-prev[i+1])*alpha; z=prev[i+2]+(z-prev[i+2])*alpha; }
     if(x!==x){ arr[i]=arr[i+1]=arr[i+2]=0; continue; }   // NaN = decayed/invalid -> hide at origin
-    if(doMorph){ const r=Math.hypot(x,y,z); if(r){ const s=displayRadius(r)/r; x*=s; y*=s; z*=s; } }
+    // Always remap the radius: full exaggeration in Scale mode, otherwise a gentle
+    // default lift so the shells float off the surface instead of hugging it.
+    const r=Math.hypot(x,y,z); if(r){ const dr = doMorph ? displayRadius(r) : displayRadiusAt(r, SHELL_LIFT); const s=dr/r; x*=s; y*=s; z*=s; }
     arr[i]=x; arr[i+1]=y; arr[i+2]=z;
   }
   cloud.geometry.attributes.position.needsUpdate=true;
@@ -2641,7 +2649,7 @@ canvas.addEventListener('click', e=>{
   } else if(cloudHit){
     exitFocus(); exitRide();
     if(selection && selection.kind==='cloud' && selection.idx===cloudHit.index) deselect();  // re-click to unselect
-    else selectCloud(cloudHit.index, true);              // click a satellite -> select + zoom to it
+    else selectCloud(cloudHit.index, false);             // click a satellite -> just select it (no auto-swing); a marker shows where it is
   } else { deselect(); }                                  // empty space clears the selection (also exits focus)
 });
 
