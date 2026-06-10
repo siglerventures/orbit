@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.29">
+<meta name="app-rev" content="3.30">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -77,6 +77,11 @@ document.addEventListener('DOMContentLoaded', function(){
     border:1px solid rgba(120,160,210,0.22); border-radius:8px; padding:7px 0; font-size:11px; cursor:pointer;
     transition:background .15s, color .15s, border-color .15s; }
   #scaleBtn.active { color:var(--fg); border-color:var(--amber); background:rgba(120,90,40,0.5); }
+  #timectl { display:flex; gap:6px; margin-top:6px; }
+  #timectl #dateBtn { flex:1; margin-top:0; }
+  #nowBtn { background:rgba(20,30,48,0.6); color:var(--muted); border:1px solid rgba(120,160,210,0.22);
+    border-radius:8px; padding:7px 11px; font-size:11px; cursor:pointer; transition:background .15s, color .15s, border-color .15s; }
+  #nowBtn:hover { color:var(--fg); border-color:var(--accent); }
   #dateBtn { width:100%; margin-top:6px; background:rgba(20,30,48,0.6); color:var(--muted);
     border:1px solid rgba(120,160,210,0.22); border-radius:8px; padding:7px 0; font-size:11px; cursor:pointer;
     transition:background .15s, color .15s, border-color .15s; }
@@ -94,6 +99,7 @@ document.addEventListener('DOMContentLoaded', function(){
     background:rgba(10,16,28,0.78); backdrop-filter:blur(10px); border:1px solid rgba(120,160,210,0.3);
     border-radius:12px; box-shadow:0 6px 26px rgba(0,0,0,0.5); }
   #tourbar.show { display:flex; }
+  #tourbar #tourprog { font-size:11px; font-variant-numeric:tabular-nums; color:var(--accent); white-space:nowrap; opacity:.85; }
   #tourbar #tourcap { flex:1; font-size:14px; line-height:1.45; color:var(--fg); }
   #tourbar #tourExit { background:none; border:none; color:var(--muted); font-size:16px; cursor:pointer; padding:2px 6px; }
   #tourbar #tourExit:hover { color:var(--fg); }
@@ -130,6 +136,10 @@ document.addEventListener('DOMContentLoaded', function(){
   .shower-label.active { color:#ffdca6; border-color:#ffb060; box-shadow:0 0 9px rgba(255,160,80,0.55); }
   .comet-label { font-size:10px; color:rgba(180,232,255,0.94); background:rgba(8,22,30,0.55);
     border:1px solid rgba(120,210,255,0.34); border-radius:5px; padding:1px 6px; white-space:nowrap; cursor:pointer; pointer-events:auto; }
+  .star-label { font-size:10px; letter-spacing:.4px; color:rgba(225,232,255,0.95); background:rgba(12,16,30,0.5);
+    border:1px solid rgba(150,180,255,0.34); border-radius:5px; padding:1px 7px; white-space:nowrap; cursor:pointer;
+    pointer-events:auto; text-shadow:0 0 5px rgba(0,0,0,0.9); }
+  .star-label:hover { color:#fff; border-color:rgba(190,215,255,0.7); box-shadow:0 0 9px rgba(140,170,255,0.45); }
 
   #search { top:16px; left:50%; transform:translateX(-50%); padding:8px 10px; display:flex; align-items:center; gap:8px; }
   #search input { width:230px; max-width:46vw; background:rgba(20,30,48,0.7); border:1px solid rgba(120,160,210,0.25);
@@ -327,7 +337,7 @@ document.addEventListener('DOMContentLoaded', function(){
     <button id="tourBtn">▶ Take a guided tour</button>
     <div id="status"><span class="dot"></span><span id="statusText">Connecting…</span></div>
   </div>
-  <div id="tourbar"><span id="tourcap"></span><button id="tourExit" title="End tour">✕</button></div>
+  <div id="tourbar"><span id="tourprog"></span><span id="tourcap"></span><button id="tourExit" title="End tour">✕</button></div>
 
   <button id="homeBtn" title="Reset view — back to the start" aria-label="Reset view">
     <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -387,6 +397,7 @@ document.addEventListener('DOMContentLoaded', function(){
     <div class="navgroup collapsed" id="grp-sky">
       <button class="navhead" data-group="sky">🔭 Skywatch <span class="caret">▾</span></button>
       <div class="navitems">
+        <button class="sky" id="sky-stars" data-tip="Mark famous individual stars — the brightest, the nearest, the most extreme — plus the Sun and our galaxy's central black hole.">Stars</button>
         <button class="sky" id="sky-const" data-tip="Toggle the major constellation star patterns on the celestial sphere.">Constellations</button>
         <button class="sky" id="sky-showers" data-tip="Toggle annual meteor shower radiants — active showers glow; labels show the next peak date.">Meteor showers</button>
         <button class="sky" id="sky-comets" data-tip="Toggle notable comets at their live computed sky positions.">Comets</button>
@@ -410,7 +421,10 @@ document.addEventListener('DOMContentLoaded', function(){
       <button data-mult="86400" title="1 day per second — Moon orbits in ~27s, planets visibly move">1d/s</button>
     </div>
     <button id="scaleBtn" title="Spread the orbital shells apart so LEO, MEO and GEO are individually navigable. The altitude readout always stays true.">Scale · True</button>
-    <button id="dateBtn" title="Jump the simulation clock to any date & time">🕓 Jump to date…</button>
+    <div id="timectl">
+      <button id="dateBtn" title="Jump the simulation clock to any date & time">🕓 Jump to date…</button>
+      <button id="nowBtn" title="Snap the clock back to the real current time, live">Now</button>
+    </div>
     <input type="datetime-local" id="dateInput" />
   </div>
 
@@ -1207,6 +1221,66 @@ function selectConstellation(c){
   highlightConst(c); showInfo(constInfo(c)); lookAtSky(c._cen); hudDist=null;   // stars: no meaningful "miles"
 }
 
+// ---- Notable individual stars: the brightest, nearest, and most extreme ----
+// Real J2000 sky positions on the same celestial sphere. The Sun is special
+// (it moves), so its marker tracks the live solar direction and selecting it
+// flies to the actual Sun. The rest are fixed points you can rotate to find.
+const STARS=[
+  { name:'Sun', special:'sun', tag:'Our star', col:[1.0,0.82,0.36], size:34,
+    fact:'Our star — a middle-aged yellow dwarf 93 million miles away that holds the entire solar system in its gravity. It is so close that its light reaches us in about 8 minutes; every other star here is light-years beyond.' },
+  { name:'Sirius', ra:101.287, dec:-16.716, tag:'Brightest star', col:[0.82,0.90,1.0], size:42,
+    fact:'The brightest star in the night sky, blazing from the constellation Canis Major just 8.6 light-years away — one of our nearest neighbours. It is secretly a double star, orbited by a dense white-dwarf companion nicknamed "the Pup".' },
+  { name:'Polaris', ra:37.954, dec:89.264, tag:'The North Star', col:[1.0,0.96,0.84], size:32,
+    fact:'The North Star sits almost directly above Earth’s north pole, so it barely moves while the entire sky wheels around it — which is why it has guided navigators for centuries. A yellow supergiant about 433 light-years away.' },
+  { name:'Betelgeuse', ra:88.793, dec:7.407, tag:'Future supernova', col:[1.0,0.42,0.28], size:40,
+    fact:'A colossal red supergiant marking Orion’s shoulder — so vast it would swallow Jupiter’s orbit if placed where the Sun is. It is near the end of its life and will explode as a supernova; when it does it will briefly shine bright enough to see in daylight. It’s overdue, ~640 light-years away — the one to watch.' },
+  { name:'Proxima Centauri', ra:217.429, dec:-62.679, tag:'Nearest star', col:[1.0,0.48,0.34], size:24,
+    fact:'The closest star to the Sun — a faint red dwarf just 4.24 light-years away, part of the Alpha Centauri system. Too dim to see with the naked eye, yet it hosts at least one roughly Earth-sized planet in its habitable zone.' },
+  { name:'Vega', ra:279.234, dec:38.784, tag:'Former pole star', col:[0.74,0.85,1.0], size:36,
+    fact:'The 5th-brightest star and a past (and future) North Star — Earth’s slow axial wobble made Vega the pole star around 12,000 BC, and it will be again near 13,700 AD. A brilliant blue-white sun just 25 light-years away.' },
+  { name:'Canopus', ra:95.988, dec:-52.696, tag:'2nd brightest', col:[1.0,0.98,0.92], size:38,
+    fact:'The second-brightest star in the sky, a dazzling southern beacon that spacecraft use as a navigation reference. A white supergiant roughly 310 light-years away, never visible from far-northern latitudes.' },
+  { name:'Rigel', ra:78.634, dec:-8.202, tag:'Blue supergiant', col:[0.70,0.82,1.0], size:36,
+    fact:'Orion’s brightest star — actually outshining Betelgeuse — a blue supergiant about 860 light-years away radiating some 120,000 times the Sun’s light. It marks the Hunter’s raised foot.' },
+  { name:'Sagittarius A*', ra:266.417, dec:-29.008, tag:'Black hole', col:[0.74,0.52,1.0], size:30,
+    fact:'Not a star but the supermassive black hole at the heart of our galaxy — about 4 million times the Sun’s mass, ~26,000 light-years away toward the constellation Sagittarius. Astronomers captured an image of its shadow in 2022.' },
+  { name:'Earendel', ra:24.355, dec:-8.458, tag:'Furthest star', col:[0.90,0.82,1.0], size:22,
+    fact:'The most distant individual star ever detected, spotted by the Hubble Space Telescope in 2022 when a foreground galaxy cluster acted as a giant gravitational lens. Its light set out ~12.9 billion years ago, when the universe was less than a billion years old.' },
+  { name:'R136a1', ra:84.675, dec:-69.101, tag:'Most luminous', col:[0.62,0.76,1.0], size:28,
+    fact:'The most massive and luminous star known — roughly 200 times the Sun’s mass and millions of times its brightness — buried in the Tarantula Nebula of the Large Magellanic Cloud, about 163,000 light-years away.' },
+];
+const starsGroup=new THREE.Group(); starsGroup.visible=false; scene.add(starsGroup);
+const starItems=[]; let starsPosAttr=null;
+function starInfo(st){ return { tag:st.tag||'Star', name:st.name, text:st.fact }; }
+(function buildStars(){
+  const pos=new Float32Array(STARS.length*3), col=new Float32Array(STARS.length*3), siz=new Float32Array(STARS.length);
+  STARS.forEach((st,i)=>{
+    const v = st.special==='sun' ? sunSceneDir(new Date()).clone().multiplyScalar(SKY_R*0.99) : raDecVec(st.ra,st.dec,SKY_R*0.99);
+    pos[i*3]=v.x; pos[i*3+1]=v.y; pos[i*3+2]=v.z;
+    col[i*3]=st.col[0]; col[i*3+1]=st.col[1]; col[i*3+2]=st.col[2]; siz[i]=st.size;
+    const el=document.createElement('div'); el.className='star-label'; el.textContent=(st.special==='sun'?'☀ ':'★ ')+st.name;
+    el.addEventListener('click', e=>{ e.stopPropagation(); selectNotableStar(st); });
+    const lbl=new CSS2DObject(el); lbl.position.copy(v); starsGroup.add(lbl); skyLabels.push(lbl);
+    starItems.push({ st, lbl });
+  });
+  const sp=starPoints(pos,col,siz); sp.frustumCulled=false; starsPosAttr=sp.geometry.attributes.position; starsGroup.add(sp);
+})();
+function updateStars(){          // keep the Sun's marker on its live sky direction
+  if(!starsGroup.visible) return;
+  const sd=sunSceneDir(new Date(simNow()));
+  STARS.forEach((st,i)=>{
+    if(st.special!=='sun') return;
+    const v=sd.clone().multiplyScalar(SKY_R*0.99);
+    starsPosAttr.array[i*3]=v.x; starsPosAttr.array[i*3+1]=v.y; starsPosAttr.array[i*3+2]=v.z;
+    starsPosAttr.needsUpdate=true; starItems[i].lbl.position.copy(v);
+  });
+}
+function selectNotableStar(st){
+  if(!starsGroup.visible){ starsGroup.visible=true; document.getElementById('sky-stars').classList.add('active'); updateStars(); }
+  if(st.special==='sun'){ focusSun(); return; }           // the Sun has its own rich focus
+  showInfo(starInfo(st)); lookAtSky(raDecVec(st.ra,st.dec,1)); hudDist=null;
+}
+
 // ---- Meteor showers: annual radiants + activity windows ----
 const SHOWERS=[
   { name:'Quadrantids',     peak:[1,3],   win:[[12,28],[1,12]], ra:230, dec:49,  zhr:120, src:'asteroid 2003 EH₁' },
@@ -1419,6 +1493,7 @@ function skywatchSearch(ql){
   const exact=(list)=> list.find(x=>x.name.toLowerCase()===ql)
     || list.find(x=>x.name.toLowerCase().startsWith(ql))
     || (ql.length>=4 ? list.find(x=>x.name.toLowerCase().includes(ql)) : null);
+  let st=exact(STARS); if(st){ selectNotableStar(st); return st.name; }
   let c=exact(CONSTELLATIONS); if(c){ selectConstellation(c); return c.name; }
   let m=COMETS.find(x=>{ const n=x.name.toLowerCase(); return n===ql || n.split('/').some(p=>p&&ql&&(p===ql||p.includes(ql))) || (ql.length>=4&&n.includes(ql)); });
   if(m){ selectComet(m); return m.name; }
@@ -1461,6 +1536,7 @@ function toggleSky(btn, group, onEnable){
   const on=!group.visible; group.visible=on; btn.classList.toggle('active', on);
   if(on){ deselect(); if(onEnable) onEnable(); setTarget(MAXD); }   // pull way out to see the sky
 }
+document.getElementById('sky-stars').addEventListener('click', function(){ toggleSky(this, starsGroup, updateStars); });
 document.getElementById('sky-const').addEventListener('click', function(){ toggleSky(this, constGroup); });
 document.getElementById('sky-showers').addEventListener('click', function(){ toggleSky(this, showerGroup, updateShowers); });
 function nearestComet(){ const date=new Date(simNow()); let best=COMETS[0], bd=1e9; for(const c of COMETS){ const d=cometGeo(c,date).distAU; if(d<bd){ bd=d; best=c; } } return best; }
@@ -1533,7 +1609,7 @@ document.getElementById('sky-aurora').addEventListener('click', function(){
 });
 // Reset every Skywatch layer (used by Home).
 function resetSkywatch(){
-  [[constGroup,'sky-const'],[showerGroup,'sky-showers'],[cometGroup,'sky-comets'],[mwGroup,'sky-milkyway'],[asteroidGroup,'sky-asteroids'],[auroraGroup,'sky-aurora']].forEach(([g,id])=>{
+  [[starsGroup,'sky-stars'],[constGroup,'sky-const'],[showerGroup,'sky-showers'],[cometGroup,'sky-comets'],[mwGroup,'sky-milkyway'],[asteroidGroup,'sky-asteroids'],[auroraGroup,'sky-aurora']].forEach(([g,id])=>{
     g.visible=false; const b=document.getElementById(id); if(b) b.classList.remove('active');
   });
   if(typeof highlightConst==='function') highlightConst(null);
@@ -2102,6 +2178,12 @@ dateInput.addEventListener('change', ()=>{
   if(!isNaN(t)){ simEpoch=t; wallEpoch=performance.now(); }   // jump there (keeps current speed)
   dateInput.classList.remove('show');
 });
+// "Now" — snap the clock back to live real time at 1× (without a full Home reset).
+document.getElementById('nowBtn').addEventListener('click', ()=>{
+  simEpoch=Date.now(); wallEpoch=performance.now(); speed=1;
+  document.querySelectorAll('#speed button').forEach(x=>x.classList.toggle('active', parseFloat(x.dataset.mult)===1));
+  dateInput.classList.remove('show');
+});
 
 // ---------- Guided cinematic tour ----------
 const TOUR=[
@@ -2118,11 +2200,12 @@ const TOUR=[
   { do:()=>{ const h=document.getElementById('homeBtn'); if(h) h.click(); }, cap:'That’s the tour — now explore on your own. 🚀', dwell:4200 },
 ];
 let tourActive=false, tourTimer=null, tourIdx=0;
-const tourbar=document.getElementById('tourbar'), tourcap=document.getElementById('tourcap');
+const tourbar=document.getElementById('tourbar'), tourcap=document.getElementById('tourcap'), tourprog=document.getElementById('tourprog');
 function stepTour(){
   if(!tourActive) return;
   if(tourIdx>=TOUR.length){ endTour(); return; }
   const s=TOUR[tourIdx]; try{ s.do(); }catch(_){}
+  tourprog.textContent=(tourIdx+1)+' / '+TOUR.length;
   tourcap.textContent=s.cap;
   tourTimer=setTimeout(()=>{ tourIdx++; stepTour(); }, s.dwell);
 }
@@ -2466,7 +2549,7 @@ function tick(now){
   if(groups.iss) updateGroup(groups.iss,date);
   updateCloud();
   if(now-lastPlanetUpd > (speed>=600?0:2500)){ updatePlanets(date); moonDir.copy(moonSceneDir(date)); lastPlanetUpd=now; }   // planets + Moon (refresh every frame when sped up so motion is smooth)
-  if(now-lastSkyUpd>2000){ updateShowers(); updateComets(); updateAsteroids(); lastSkyUpd=now; }   // refresh active showers + comet/asteroid positions
+  if(now-lastSkyUpd>2000){ updateShowers(); updateComets(); updateAsteroids(); updateStars(); lastSkyUpd=now; }   // refresh active showers + comet/asteroid/Sun positions
   updateMeteors(dt);   // animate shooting meteors (real-time)
   updateSun(date);     // keep the Sun in its true sky direction
   updatePlanetMoons();
