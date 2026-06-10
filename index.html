@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.34">
+<meta name="app-rev" content="3.35">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -99,7 +99,7 @@ document.addEventListener('DOMContentLoaded', function(){
     background:rgba(10,16,28,0.78); backdrop-filter:blur(10px); border:1px solid rgba(120,160,210,0.3);
     border-radius:12px; box-shadow:0 6px 26px rgba(0,0,0,0.5); }
   #tourbar.show { display:flex; }
-  #infoCloseup { display:none; margin-top:10px; width:100%; background:rgba(78,163,255,0.16); color:var(--accent);
+  #infoCloseup { display:none; pointer-events:auto; margin-top:10px; width:100%; background:rgba(78,163,255,0.16); color:var(--accent);
     border:1px solid rgba(78,163,255,0.5); border-radius:8px; padding:7px 0; font-size:12px; cursor:pointer;
     transition:background .15s, color .15s; }
   #infoCloseup:hover { background:rgba(78,163,255,0.35); color:#fff; }
