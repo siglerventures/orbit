@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.48">
+<meta name="app-rev" content="3.49">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -1990,6 +1990,11 @@ const PW_WIKI={
   korea:'Korean_Peninsula', greatwall:'Great_Wall_of_China', hurricane:'Tropical_cyclone',
   aurora:'Aurora', volcano:'Volcano', lightning:'Lightning'
 };
+// Hand-picked free-licensed images for places whose Wikipedia summary exposes none.
+const PW_IMG={
+  // NASA ISS astronaut photo of Palm Jumeirah (public domain).
+  palm:'https://commons.wikimedia.org/wiki/Special:FilePath/Artificial%20Archipelagos,%20Dubai,%20United%20Arab%20Emirates%20ISS022-E-024940%20lrg.jpg?width=1024'
+};
 const realEl=document.getElementById('realphoto'), realImg=document.getElementById('realImg'),
       realLoad=document.getElementById('realLoad'), realName=document.getElementById('realName'),
       realCap=document.getElementById('realCap'), realLinks=document.getElementById('realLinks'),
@@ -2018,7 +2023,14 @@ async function openRealPhoto(item){
       data=await r.json(); _realCache[wiki]=data;
     }
     const thumb=data.thumbnail&&data.thumbnail.source, orig=data.originalimage&&data.originalimage.source;
-    let src = thumb ? thumb.replace(/\/\d+px-/, '/1024px-') : orig;     // bump the thumb to a larger render
+    let src = PW_IMG[item.key] || (thumb ? thumb.replace(/\/\d+px-/, '/1024px-') : orig);   // override, else summary image
+    if(!src){                                                          // summary had no image -> try the pageimages API
+      try{
+        const r2=await fetch('https://en.wikipedia.org/w/api.php?action=query&prop=pageimages&piprop=original|thumbnail&pithumbsize=1024&redirects=1&format=json&origin=*&titles='+encodeURIComponent(wiki));
+        const j2=await r2.json(); const pages=j2&&j2.query&&j2.query.pages;
+        if(pages){ const pg=Object.values(pages)[0]||{}; src=(pg.original&&pg.original.source)||(pg.thumbnail&&pg.thumbnail.source); }
+      }catch(_){ }
+    }
     if(src){
       realImg.onload=()=>{ realLoad.style.display='none'; realImg.style.display=''; };
       realImg.onerror=()=>{ realLoad.textContent='(photo unavailable — use the links below)'; };
