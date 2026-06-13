@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.47">
+<meta name="app-rev" content="3.48">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -121,6 +121,29 @@ document.addEventListener('DOMContentLoaded', function(){
   #dioBack { background:rgba(20,30,48,0.66); color:var(--fg); border:1px solid rgba(120,160,210,0.4);
     border-radius:10px; padding:9px 18px; font-size:13px; cursor:pointer; transition:background .15s, border-color .15s; }
   #dioBack:hover { background:rgba(40,58,90,0.8); border-color:var(--accent); }
+  #dioBtns { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+  #dioReal { background:rgba(40,70,120,0.7); color:#eaf3ff; border:1px solid rgba(120,170,235,0.6);
+    border-radius:10px; padding:9px 18px; font-size:13px; cursor:pointer; transition:background .15s, border-color .15s; }
+  #dioReal:hover { background:rgba(56,96,160,0.85); border-color:var(--accent); }
+  /* Real-photo lightbox */
+  #realphoto { position:fixed; inset:0; z-index:90; display:none; align-items:center; justify-content:center;
+    background:rgba(4,8,16,0.82); backdrop-filter:blur(4px); padding:20px; }
+  #realphoto.show { display:flex; }
+  #realCard { position:relative; background:rgba(14,22,38,0.96); border:1px solid rgba(120,160,210,0.34);
+    border-radius:14px; padding:16px; max-width:760px; width:100%; max-height:90vh; overflow:auto; box-shadow:0 18px 60px rgba(0,0,0,0.6); }
+  #realClose { position:absolute; top:10px; right:12px; background:rgba(20,30,48,0.7); color:var(--fg);
+    border:1px solid rgba(120,160,210,0.4); border-radius:8px; width:30px; height:30px; cursor:pointer; font-size:14px; }
+  #realClose:hover { border-color:var(--accent); }
+  #realName { font-size:17px; font-weight:600; color:#eaf3ff; margin:2px 34px 10px 2px; }
+  #realImgWrap { position:relative; min-height:120px; border-radius:10px; overflow:hidden; background:rgba(0,0,0,0.3); }
+  #realImg { display:none; width:100%; height:auto; max-height:62vh; object-fit:cover; border-radius:10px; }
+  #realLoad { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:12px; color:var(--muted); }
+  #realCap { font-size:12.5px; color:var(--fg); line-height:1.5; margin:11px 2px 8px; }
+  #realLinks { display:flex; gap:10px; flex-wrap:wrap; }
+  #realLinks a { font-size:12.5px; color:#bcd8ff; text-decoration:none; background:rgba(40,70,120,0.55);
+    border:1px solid rgba(120,170,235,0.45); border-radius:8px; padding:7px 13px; }
+  #realLinks a:hover { border-color:var(--accent); background:rgba(56,96,160,0.7); }
+  #realCredit { font-size:10.5px; color:var(--muted); margin-top:9px; }
   .dioNav { position:absolute; top:50%; transform:translateY(-50%); pointer-events:auto;
     width:46px; height:64px; background:rgba(12,18,32,0.34); color:rgba(225,232,255,0.85);
     border:1px solid rgba(120,160,210,0.26); border-radius:12px; font-size:30px; line-height:1; cursor:pointer;
@@ -384,7 +407,22 @@ document.addEventListener('DOMContentLoaded', function(){
       <h2 id="dioName"></h2>
       <p id="dioText"></p>
       <div id="dioHint">An artist's impression — what it might be like to be there.</div>
-      <button id="dioBack">← Back to the sky</button>
+      <div id="dioBtns">
+        <button id="dioReal" style="display:none">📷 See the real place</button>
+        <button id="dioBack">← Back to the sky</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Real-photo lightbox: the actual place (Wikipedia lead image) + a link out to live imagery. -->
+  <div id="realphoto" aria-hidden="true">
+    <div id="realCard">
+      <button id="realClose" aria-label="Close">✕</button>
+      <div id="realName"></div>
+      <div id="realImgWrap"><div id="realLoad">Loading real photo…</div><img id="realImg" alt="" /></div>
+      <p id="realCap"></p>
+      <div id="realLinks"></div>
+      <div id="realCredit"></div>
     </div>
   </div>
 
@@ -1361,6 +1399,7 @@ let dioUpdaters=[], dioDispose=[];
 const dioramaEl=document.getElementById('diorama');
 const dioName=document.getElementById('dioName'), dioTag=document.getElementById('dioTag'), dioText=document.getElementById('dioText');
 const dioPrevBtn=document.getElementById('dioPrev'), dioNextBtn=document.getElementById('dioNext');
+const dioRealBtn=document.getElementById('dioReal'); let dioObj=null;
 function _radialTex(stops){
   const c=document.createElement('canvas'); c.width=c.height=128; const g=c.getContext('2d');
   const grd=g.createRadialGradient(64,64,0,64,64,64); stops.forEach(s=>grd.addColorStop(s[0],s[1]));
@@ -1908,6 +1947,9 @@ function enterDiorama(kind,obj){
   clearDiorama(); dioActive=true; dioT=0; dioOrbit=Math.random()*6.283;
   dioCamCfg=buildScene(kind,obj);
   dioKind=kind; dioList=dioListFor(kind)||[obj]; dioIdx=dioList.indexOf(obj);
+  dioObj=obj;                                                          // remember the subject for the "real photo" button
+  const _wk = obj && (obj.wiki || (obj.key && typeof PW_WIKI!=='undefined' && PW_WIKI[obj.key]));
+  dioRealBtn.style.display = _wk ? '' : 'none';
   dioCam.aspect=innerWidth/innerHeight; dioCam.updateProjectionMatrix();
   const m=dioMeta(kind,obj); dioName.textContent=m.title; dioTag.textContent=m.tag; dioText.textContent=m.text;
   const multi=dioList.length>1; dioPrevBtn.style.display=multi?'':'none'; dioNextBtn.style.display=multi?'':'none';
@@ -1936,6 +1978,62 @@ function updateDiorama(dt){
   for(const u of dioUpdaters){ try{ u(dioT,dt); }catch(_){ } }
 }
 document.getElementById('dioBack').addEventListener('click', exitDiorama);
+
+// ---------- "See the real place": Wikipedia lead photo + caption, plus a link out to live imagery. ----------
+// Keyed by Planetwatch item.key so we don't touch every entry. Titles resolve through
+// Wikipedia's redirect handling; a wrong/missing one just falls back to the links.
+const PW_WIKI={
+  reef:'Great_Barrier_Reef', everest:'Mount_Everest', canyon:'Grand_Canyon', richat:'Richat_Structure',
+  baikal:'Lake_Baikal', nile:'Nile_Delta', amazon:'Amazon_River', bahamas:'Tongue_of_the_Ocean',
+  uyuni:'Salar_de_Uyuni', betsiboka:'Betsiboka_River', greenland:'Greenland_ice_sheet', sahara:'Sahara',
+  palm:'Palm_Jumeirah', pyramids:'Giza_pyramid_complex', almeria:'Almería', pivot:'Center-pivot_irrigation',
+  korea:'Korean_Peninsula', greatwall:'Great_Wall_of_China', hurricane:'Tropical_cyclone',
+  aurora:'Aurora', volcano:'Volcano', lightning:'Lightning'
+};
+const realEl=document.getElementById('realphoto'), realImg=document.getElementById('realImg'),
+      realLoad=document.getElementById('realLoad'), realName=document.getElementById('realName'),
+      realCap=document.getElementById('realCap'), realLinks=document.getElementById('realLinks'),
+      realCredit=document.getElementById('realCredit');
+const _realCache={};
+function mapsLink(item){ return (item && item.lat!=null) ? `https://www.google.com/maps/@${item.lat},${item.lon},10z/data=!3m1!1e3` : null; }
+function closeRealPhoto(){ realEl.classList.remove('show'); realEl.setAttribute('aria-hidden','true'); }
+async function openRealPhoto(item){
+  if(!item) return;
+  const wiki = item.wiki || PW_WIKI[item.key]; if(!wiki) return;
+  realName.textContent = item.name || '';
+  realCap.textContent=''; realCredit.textContent='';
+  realImg.style.display='none'; realImg.removeAttribute('src');
+  realLoad.style.display=''; realLoad.textContent='Loading real photo…';
+  // Links out (the user picked "Both"): Wikipedia article + live satellite imagery at the spot.
+  const wikiUrl='https://en.wikipedia.org/wiki/'+encodeURIComponent(wiki);
+  const ml=mapsLink(item);
+  realLinks.innerHTML = `<a href="${wikiUrl}" target="_blank" rel="noopener">Wikipedia ↗</a>`
+    + (ml ? ` <a href="${ml}" target="_blank" rel="noopener">Open in Maps (satellite) ↗</a>` : '');
+  realEl.classList.add('show'); realEl.setAttribute('aria-hidden','false');
+  try{
+    let data=_realCache[wiki];
+    if(!data){
+      const r=await fetch('https://en.wikipedia.org/api/rest_v1/page/summary/'+encodeURIComponent(wiki), {headers:{accept:'application/json'}});
+      if(!r.ok) throw new Error('http '+r.status);
+      data=await r.json(); _realCache[wiki]=data;
+    }
+    const thumb=data.thumbnail&&data.thumbnail.source, orig=data.originalimage&&data.originalimage.source;
+    let src = thumb ? thumb.replace(/\/\d+px-/, '/1024px-') : orig;     // bump the thumb to a larger render
+    if(src){
+      realImg.onload=()=>{ realLoad.style.display='none'; realImg.style.display=''; };
+      realImg.onerror=()=>{ realLoad.textContent='(photo unavailable — use the links below)'; };
+      realImg.src=src;
+      realCredit.textContent='Photo & summary via Wikipedia / Wikimedia Commons.';
+    } else { realLoad.textContent='No photo found — use the links below.'; }
+    if(data.extract) realCap.textContent = data.extract.length>260 ? data.extract.slice(0,257)+'…' : data.extract;
+  }catch(e){
+    realLoad.textContent='Couldn’t load a photo right now — use the links below.';
+  }
+}
+dioRealBtn.addEventListener('click', ()=>openRealPhoto(dioObj));
+document.getElementById('realClose').addEventListener('click', closeRealPhoto);
+realEl.addEventListener('click', e=>{ if(e.target===realEl) closeRealPhoto(); });   // click backdrop to close
+window.addEventListener('keydown', e=>{ if(e.key==='Escape' && realEl.classList.contains('show')) closeRealPhoto(); });
 document.getElementById('dioPrev').addEventListener('click', ()=>dioGo(-1));
 document.getElementById('dioNext').addEventListener('click', ()=>dioGo(1));
 window.addEventListener('keydown', e=>{ if(!dioActive) return;
