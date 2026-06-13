@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.50">
+<meta name="app-rev" content="3.51">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -281,6 +281,11 @@ document.addEventListener('DOMContentLoaded', function(){
   #passes .prow:hover { background:rgba(40,70,120,0.7); border-color:var(--accent); }
   #passes .pvis { color:#ffd86b; font-weight:600; white-space:nowrap; }
   #passes .pdim { color:var(--muted); white-space:nowrap; }
+  #tonightDigest { margin-bottom:7px; }
+  #tonightDigest .trow { display:flex; justify-content:space-between; gap:12px; font-size:12px; padding:4px 2px;
+    border-bottom:1px solid rgba(120,160,210,0.12); }
+  #tonightDigest .trow > span:first-child { color:var(--fg); white-space:nowrap; }
+  #tonightDigest .trow > span:last-child { color:var(--muted); text-align:right; white-space:normal; }
   .sat-label { font-size:11px; color:#ffe7b0; background:rgba(10,16,28,0.66); border:1px solid rgba(242,182,90,0.45);
     padding:2px 7px; border-radius:7px; white-space:nowrap; pointer-events:none; text-shadow:0 1px 2px #000; margin-top:-14px; }
   .body-label { font-size:11px; color:var(--muted); background:rgba(10,16,28,0.55); border:1px solid rgba(120,160,210,0.25);
@@ -445,7 +450,7 @@ document.addEventListener('DOMContentLoaded', function(){
         <path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v9h13v-9"/><path d="M10 19v-5h4v5"/>
       </svg>
     </button>
-    <button id="passBtn" title="Your location & satellite passes" aria-label="Your location & satellite passes">📍</button>
+    <button id="passBtn" title="Tonight over you — Moon, planets, meteors & ISS passes" aria-label="Tonight over you">📍</button>
     <button id="shareBtn" title="Copy a link to this exact view" aria-label="Share this view">🔗</button>
     <button id="exploreBtn" title="Search" aria-label="Search">✨</button>
     <div id="search" class="panel">
@@ -465,8 +470,9 @@ document.addEventListener('DOMContentLoaded', function(){
   </div>
 
   <div id="passes" class="panel">
-    <div class="exhead">Passes over you</div>
-    <div class="pstat" id="passStat">Tap to use your location and see upcoming ISS passes.</div>
+    <div class="exhead">Tonight over you</div>
+    <div id="tonightDigest"></div>
+    <div class="pstat" id="passStat">Tap to use your location for tonight’s sky — Moon, planets, meteors & ISS passes over you.</div>
     <div id="passList"></div>
     <button class="prow" id="aimBtn" style="justify-content:center; margin-top:6px; display:none">🧭 Point phone at the sky</button>
     <div id="aimOut"></div>
@@ -3195,7 +3201,44 @@ function predictISSPasses(hours, maxPasses){
   return passes;
 }
 const fmtPassTime=d=>d.toLocaleString(undefined,{weekday:'short',hour:'numeric',minute:'2-digit'});
+// ---------- "Tonight over you": fuse moon phase + planets up + active shower (+ ISS passes below). ----------
+function moonPhase(date){
+  const ecl=rd=>{ const e=23.4393*D2R; return Math.atan2(Math.sin(rd.ra)*Math.cos(e)+Math.tan(rd.dec)*Math.sin(e), Math.cos(rd.ra)); };
+  const ml=ecl(sceneToRaDec(moonSceneDir(date))), sl=ecl(sceneToRaDec(sunSceneDir(date)));
+  const d=(((ml-sl)*R2D)%360+360)%360;                       // 0 new · 90 first qtr · 180 full · 270 last qtr
+  const k=(1-Math.cos(d*D2R))/2;
+  const tbl=[[20,'🌑','New Moon'],[70,'🌒','Waxing crescent'],[110,'🌓','First quarter'],[160,'🌔','Waxing gibbous'],
+             [200,'🌕','Full Moon'],[250,'🌖','Waning gibbous'],[290,'🌗','Last quarter'],[340,'🌘','Waning crescent'],[361,'🌑','New Moon']];
+  let emoji='🌑', name='New Moon'; for(const [lim,em,nm] of tbl){ if(d<lim){ emoji=em; name=nm; break; } }
+  return { k, name, emoji };
+}
+function activeShower(date){
+  const x=(date.getMonth()+1)*100+date.getDate();
+  for(const s of SHOWERS){ if(!s.win) continue;
+    const a=s.win[0][0]*100+s.win[0][1], b=s.win[1][0]*100+s.win[1][1];
+    const on = (a<=b) ? (x>=a&&x<=b) : (x>=a||x<=b);          // handle year-wrap (e.g. Quadrantids)
+    if(on){ const pk=s.peak?s.peak[0]*100+s.peak[1]:null; return { name:s.name, zhr:s.zhr, isPeak: pk!=null && Math.abs(pk-x)<=2 }; }
+  }
+  return null;
+}
+function renderTonight(){
+  const host=document.getElementById('tonightDigest'); if(!host) return;
+  if(!observerGd){ host.innerHTML=''; return; }
+  const date=new Date(), rows=[], lst=satellite.gstime(date)+observerGd.longitude, lat=observerGd.latitude;
+  const mp=moonPhase(date);
+  const mrd=sceneToRaDec(moonSceneDir(date)), maa=altAzFromRaDec(mrd.ra,mrd.dec,lst,lat);
+  const moonWhere = maa.alt>0 ? ` · up ${Math.round(maa.alt*R2D)}° ${compass(maa.az)}` : ' · below horizon';
+  rows.push(`<div class="trow"><span>${mp.emoji} Moon</span><span>${mp.name} · ${Math.round(mp.k*100)}% lit${moonWhere}</span></div>`);
+  const ups=[];
+  for(const p of planets){ if(!p.dir) continue; const rd=sceneToRaDec(p.dir), aa=altAzFromRaDec(rd.ra,rd.dec,lst,lat);
+    if(aa.alt>3*D2R) ups.push(`${p.def.name} (${compass(aa.az)} ${Math.round(aa.alt*R2D)}°)`); }
+  rows.push(`<div class="trow"><span>🪐 Planets up</span><span>${ups.length?ups.join(' · '):'none above the horizon'}</span></div>`);
+  const sh=activeShower(date);
+  if(sh) rows.push(`<div class="trow"><span>☄️ ${sh.name}</span><span>${sh.isPeak?'near peak · ':'active · '}~${sh.zhr}/hr</span></div>`);
+  host.innerHTML=rows.join('');
+}
 function renderPasses(){
+  renderTonight();                                           // moon · planets · meteors, then the ISS passes below
   aimBtn.style.display = aimSupported() ? 'flex' : 'none';   // sky-pointing is touch-device only
   const now=issLookAngles(new Date());
   passStat.innerHTML = (now && now.el>0)
