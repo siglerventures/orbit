@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.42">
+<meta name="app-rev" content="3.44">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -127,8 +127,8 @@ document.addEventListener('DOMContentLoaded', function(){
     backdrop-filter:blur(4px); transition:background .15s, color .15s; }
   .dioNav:hover { background:rgba(30,44,72,0.6); color:#fff; }
   #dioPrev { left:16px; } #dioNext { right:16px; }
-  body.dio-on #hud, body.dio-on #nav, body.dio-on #search, body.dio-on #title,
-  body.dio-on #homeBtn, body.dio-on #tourbar, body.dio-on #info, body.dio-on #orbit-footer { display:none !important; }
+  body.dio-on #hud, body.dio-on #nav, body.dio-on #title,
+  body.dio-on #tourbar, body.dio-on #info, body.dio-on #orbit-footer { display:none !important; }
   @media (max-width:560px){ #dioName { font-size:23px; } #dioText { font-size:13px; } .dioNav { width:38px; height:54px; font-size:24px; } }
   #tourbar #tourprog { font-size:11px; font-variant-numeric:tabular-nums; color:var(--accent); white-space:nowrap; opacity:.85; }
   #tourbar #tourcap { flex:1; font-size:14px; line-height:1.45; color:var(--fg); }
@@ -176,7 +176,10 @@ document.addEventListener('DOMContentLoaded', function(){
     pointer-events:auto; text-shadow:0 0 5px rgba(0,0,0,0.9); }
   .place-label:hover { color:#bfffd6; border-color:rgba(150,245,185,0.7); box-shadow:0 0 9px rgba(90,220,140,0.45); }
 
-  #search { top:16px; left:50%; transform:translateX(-50%); padding:8px 10px; display:flex; align-items:center; gap:8px; }
+  /* Centered top toolbar: Home · 📍 · ✨ · search (search revealed by ✨). Shown everywhere, incl. dioramas. */
+  #topbar { position:fixed; z-index:60; top:16px; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:10px; }
+  #search { position:relative; padding:8px 10px; display:none; align-items:center; gap:8px; }
+  #topbar.search-open #search { display:flex; }
   #search input { width:230px; max-width:46vw; background:rgba(20,30,48,0.7); border:1px solid rgba(120,160,210,0.25);
     border-radius:8px; color:var(--fg); font-size:13px; padding:7px 10px; outline:none; }
   #search input:focus { border-color:var(--accent); }
@@ -184,7 +187,7 @@ document.addEventListener('DOMContentLoaded', function(){
     font-size:11px; color:var(--amber); white-space:nowrap; pointer-events:none; }
 
   /* Home / reset — glassy circular button just left of the search bar. */
-  #homeBtn { position:fixed; z-index:60; top:16px; left:calc(50% - 205px);
+  #homeBtn { position:relative;
     width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center;
     color:var(--accent); cursor:pointer; -webkit-tap-highlight-color:transparent;
     background:radial-gradient(circle at 32% 28%, rgba(78,163,255,0.30), rgba(20,30,48,0.72));
@@ -201,7 +204,7 @@ document.addEventListener('DOMContentLoaded', function(){
   @keyframes homeOrbit { to { transform:rotate(360deg); } }
 
   /* Explore — sparkle button (right of search) + live-highlights popover. */
-  #exploreBtn { position:fixed; z-index:60; top:16px; left:calc(50% + 150px);
+  #exploreBtn { position:relative;
     width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center;
     font-size:18px; cursor:pointer; -webkit-tap-highlight-color:transparent;
     background:radial-gradient(circle at 32% 28%, rgba(242,182,90,0.30), rgba(20,30,48,0.72));
@@ -223,7 +226,7 @@ document.addEventListener('DOMContentLoaded', function(){
   #explore .exv { color:var(--fg); font-weight:600; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
   /* Passes — location button (📍) + upcoming-pass popover. */
-  #passBtn { position:fixed; z-index:60; top:16px; left:calc(50% + 196px);
+  #passBtn { position:relative;
     width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center;
     font-size:17px; cursor:pointer; -webkit-tap-highlight-color:transparent;
     background:radial-gradient(circle at 32% 28%, rgba(120,220,150,0.30), rgba(20,30,48,0.72));
@@ -278,12 +281,9 @@ document.addEventListener('DOMContentLoaded', function(){
     #title { top:58px; left:8px; max-width:60vw; padding:9px 11px; }
     #title h1 { font-size:14px; }
     #title p { font-size:11px; }
-    /* Top toolbar stays at the top (like desktop): home · search · explore · passes */
-    #search { top:8px; }
-    #search input { width:38vw; }
-    #homeBtn { top:8px; left:8px; bottom:auto; }
-    #exploreBtn { top:8px; left:auto; right:54px; bottom:auto; }
-    #passBtn { top:8px; left:auto; right:8px; bottom:auto; }
+    /* Centered top toolbar (home · 📍 · ✨ · search) — just nudge it up + tighten. */
+    #topbar { top:8px; gap:7px; }
+    #search input { width:42vw; }
     #explore { top:56px; bottom:auto; }
     #passes { top:56px; bottom:auto; }
     /* Nav drops below the toolbar so they don't collide */
@@ -388,18 +388,20 @@ document.addEventListener('DOMContentLoaded', function(){
     </div>
   </div>
 
-  <button id="homeBtn" title="Reset view — back to the start" aria-label="Reset view">
-    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v9h13v-9"/><path d="M10 19v-5h4v5"/>
-    </svg>
-  </button>
-
-  <div id="search" class="panel">
-    <input id="searchInput" type="text" placeholder="Search satellite or NORAD id…" autocomplete="off" spellcheck="false" />
-    <span id="searchMsg"></span>
+  <div id="topbar">
+    <button id="homeBtn" title="Reset view — back to the start" aria-label="Reset view">
+      <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v9h13v-9"/><path d="M10 19v-5h4v5"/>
+      </svg>
+    </button>
+    <button id="passBtn" title="Your location & satellite passes" aria-label="Your location & satellite passes">📍</button>
+    <button id="exploreBtn" title="Search" aria-label="Search">✨</button>
+    <div id="search" class="panel">
+      <input id="searchInput" type="text" placeholder="Search satellite or NORAD id…" autocomplete="off" spellcheck="false" />
+      <span id="searchMsg"></span>
+    </div>
   </div>
 
-  <button id="exploreBtn" title="Explore live highlights" aria-label="Explore live highlights">✨</button>
   <div id="explore" class="panel">
     <div class="exhead">Live highlights — click to fly</div>
     <button class="exrow" data-ex="low"><span class="exk">🛰️ Closest to Earth</span><span class="exv" id="ex-low">—</span></button>
@@ -409,7 +411,6 @@ document.addEventListener('DOMContentLoaded', function(){
     <button class="exrow" data-ex="eclipse"><span class="exk">🌒 Next eclipse</span><span class="exv" id="ex-eclipse">—</span></button>
   </div>
 
-  <button id="passBtn" title="Satellite passes over your location" aria-label="Satellite passes over your location">📍</button>
   <div id="passes" class="panel">
     <div class="exhead">Passes over you</div>
     <div class="pstat" id="passStat">Tap to use your location and see upcoming ISS passes.</div>
@@ -2909,6 +2910,8 @@ canvas.addEventListener('pointerdown', ()=>{ if(tourActive) endTour(); });   // 
 // Home / reset — glide back to the opening view and clear all the focused state.
 const HOME_POS=new THREE.Vector3(0,0.5,2.6);
 document.getElementById('homeBtn').addEventListener('click', ()=>{
+  if(typeof exitDiorama==='function' && dioActive) exitDiorama();   // Home from inside a close-up returns to the globe
+  document.getElementById('topbar').classList.remove('search-open');   // tuck the search bar away
   deselect();                          // clear selection + info card
   focusConstellation(null);            // drop any constellation size boost / isolation
   resetSkywatch();                     // turn off constellations / showers / comets / Milky Way + clear highlight
@@ -2960,15 +2963,12 @@ function computeHighlights(){
   }
   return {lo,hi,fa};
 }
+// ✨ now reveals/hides the search bar (its old "live highlights" popover is retired).
 document.getElementById('exploreBtn').addEventListener('click', ()=>{
-  if(explorePanel.classList.contains('show')){ explorePanel.classList.remove('show'); return; }
-  exData=computeHighlights();
-  document.getElementById('ex-low').textContent  = exData.lo ? exName(exData.lo.i)+' · '+fmt(Math.max(0,exData.lo.v))+' mi'  : 'no data yet';
-  document.getElementById('ex-high').textContent = exData.hi ? exName(exData.hi.i)+' · '+fmt(exData.hi.v)+' mi'             : 'no data yet';
-  document.getElementById('ex-fast').textContent = exData.fa ? exName(exData.fa.i)+' · '+fmt(exData.fa.v)+' mph'            : 'no data yet';
-  const ecl=nextEclipse(simNow());   // next solar/lunar eclipse
-  document.getElementById('ex-eclipse').textContent = ecl ? (eclipseName(ecl)+' · '+new Date(ecl.time).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'})) : 'none found';
-  explorePanel.classList.add('show');
+  const tb=document.getElementById('topbar');
+  const open=tb.classList.toggle('search-open');
+  if(open){ if(passPanel) passPanel.classList.remove('show'); if(explorePanel) explorePanel.classList.remove('show'); searchInput.focus(); }
+  else searchInput.blur();
 });
 function setSpeed(mult){   // jump to a speed and reflect it on the buttons
   simEpoch=simNow(); wallEpoch=performance.now(); speed=mult;
@@ -3342,12 +3342,24 @@ function buildLightningScene(){ return dioGroundScene('', `
   col+=vec3(0.7,0.82,1.0)*fl*1.6;
   col+=vec3(1.0,0.9,0.6)*smoothstep(0.9,1.0,fbm(vec3(uv*50.0,9.0)))*0.3;
 `, {}, {bg:0x010206}); }
-function buildHimalayaScene(){ return dioGroundScene('', `
-  float h=fbm(vec3(uv*5.0,0.0))+0.5*fbm(vec3(uv*12.0,2.0));
-  col=mix(vec3(0.32,0.26,0.22), vec3(0.92,0.94,1.0), smoothstep(0.25,0.6,h));
-  float dh=fbm(vec3((uv+vec2(0.012,0.0))*5.0,0.0))-fbm(vec3((uv-vec2(0.012,0.0))*5.0,0.0));
-  col*=0.7+1.6*clamp(dh*6.0+0.3,0.0,1.0);
-`, {}, {bg:0x10141c}); }
+function buildHimalayaScene(){ return dioGroundScene(
+`float elev(vec2 p){
+  float r = 1.0 - abs(snoise(vec3(p*3.5,0.0)));
+  r = r*0.55 + (1.0-abs(snoise(vec3(p*8.0,4.0))))*0.30 + (1.0-abs(snoise(vec3(p*19.0,9.0))))*0.15;
+  return r;
+}`, `
+  vec2 q=uv*2.4;
+  float H=elev(q);
+  float hx=elev(q+vec2(0.02,0.0))-elev(q-vec2(0.02,0.0));
+  float hy=elev(q+vec2(0.0,0.02))-elev(q-vec2(0.0,0.02));
+  vec3 n=normalize(vec3(-hx,-hy,0.05));               // surface normal from the height gradient
+  vec3 sun=normalize(vec3(-0.55,0.5,0.65));
+  float light=clamp(dot(n,sun)*0.95+0.3,0.0,1.5);      // relief shading -> 3D ridges
+  float snowAmt=smoothstep(0.52,0.80,H);               // snow caps the high crests, rock in the valleys
+  vec3 base=mix(vec3(0.30,0.25,0.22), vec3(0.96,0.97,1.0), snowAmt);
+  col=base*light;
+  col=mix(col*vec3(0.55,0.63,0.85), col*vec3(1.06,1.0,0.9), clamp(light*0.8,0.0,1.0));   // cool shadows, warm sun
+`, {}, {bg:0x0c1018}); }
 function buildBaikalScene(){ return dioGroundScene('', `
   col=vec3(0.5,0.66,0.74)*(0.8+0.25*fbm(vec3(uv*6.0,0.0)));
   col=mix(col, vec3(0.1,0.5,0.6), smoothstep(0.03,0.0, abs(fract(fbm(vec3(uv*4.0,2.0))*5.0)-0.5)-0.45)*0.8);
