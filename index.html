@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.46">
+<meta name="app-rev" content="3.47">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -3305,19 +3305,32 @@ function buildReefScene(){ return dioGroundScene('', `
   col*=0.85+0.25*fbm(vec3(uv*16.0,1.0));
   col+=exp(-pow((uv.x-0.62)*5.0,2.0))*0.22*vec3(1.0,0.98,0.9);
 `, {}, {bg:0x02101c}); }
-function buildCanyonScene(){ return dioGroundScene('', `
-  float bands=0.5+0.5*sin(uv.y*46.0 + fbm(vec3(uv*5.0,0.0))*5.0);
-  col=mix(vec3(0.62,0.36,0.22), vec3(0.42,0.24,0.16), bands);
-  col*=0.72+0.32*fbm(vec3(uv*18.0,1.0));
-  float path=uv.x-(0.5+0.17*sin(uv.y*7.0));
-  col=mix(col, vec3(0.22,0.40,0.42), exp(-pow(path*30.0,2.0)));
-`, {}, {bg:0x140a06}); }
-function buildRichatScene(){ return dioGroundScene('', `
-  vec2 c=uv-0.5; float r=length(c)*2.0;
-  col=mix(vec3(0.56,0.44,0.30), vec3(0.40,0.31,0.22), 0.5+0.5*sin(r*42.0));
-  col*=0.7+0.34*fbm(vec3(uv*12.0,1.0));
-  col=mix(col, vec3(0.66,0.54,0.36)*(0.8+0.3*fbm(vec3(uv*9.0,3.0))), smoothstep(0.82,1.0,r));
-`, {}, {bg:0x140e08}); }
+function buildCanyonScene(){ return dioTerrain({
+  amp:280, sky:0x1a0f0a, sunPos:[-0.75,0.42,0.4], sunCol:0xffe1bc, sunI:2.8, fogFar:1100,
+  height:(x,y)=>{
+    let h=0.62 + 0.30*_fbm2(x*2.6+4.0, y*2.6, 4);                 // layered mesa plateau
+    const cx=0.5 + 0.16*Math.sin(y*5.5) + 0.05*Math.sin(y*13.0);  // winding river course
+    const d=Math.abs(x-cx);
+    h -= 0.82*Math.exp(-(d*7.0)*(d*7.0));                         // carve the inner gorge
+    h -= 0.22*Math.exp(-(d*3.0)*(d*3.0));                         // wider outer valley
+    return Math.max(h,0.03);
+  },
+  color:(c,hn)=>{
+    if(hn<0.16){ c.setRGB(0.22,0.40,0.42); return; }             // green-blue river on the floor
+    const band=0.5+0.5*Math.sin(hn*34.0);                        // stratified red-rock layers
+    c.setRGB(0.58-0.16*band, 0.34-0.10*band, 0.21-0.06*band);
+  },
+  cam:{ radius:300, height:120, target:_V(0,70,0), rate:0.016 }
+}); }
+function buildRichatScene(){ return dioTerrain({
+  amp:130, sky:0x150f08, sunPos:[-0.6,0.4,0.6], sunCol:0xffe7c4, sunI:2.7,
+  height:(x,y)=>{
+    const dx=x-0.5, dy=y-0.5, r=Math.hypot(dx,dy);
+    return 0.5 + 0.44*Math.sin(r*58.0)*Math.exp(-r*1.5) + 0.07*_fbm2(x*5,y*5,3);   // concentric ridges of the bullseye
+  },
+  color:(c,hn)=>{ const t=0.5+0.5*Math.sin(hn*30.0); c.setRGB(0.62-0.14*t, 0.50-0.10*t, 0.34-0.07*t); },
+  cam:{ radius:240, height:210, target:_V(0,15,0), rate:0.02 }    // raised camera so the rings read as a target
+}); }
 function buildNileNightScene(){ return dioGroundScene('', `
   col=vec3(0.01,0.01,0.03);
   float path = uv.x - (0.5 + 0.16*sin(uv.y*6.0+1.0));
@@ -3411,15 +3424,24 @@ function buildBaikalScene(){ return dioGroundScene('', `
   col=mix(col, vec3(0.1,0.5,0.6), smoothstep(0.03,0.0, abs(fract(fbm(vec3(uv*4.0,2.0))*5.0)-0.5)-0.45)*0.8);
   col=mix(col, vec3(0.85,0.95,1.0), smoothstep(0.02,0.0, abs(fract(fbm(vec3(uv*9.0,5.0))*7.0)-0.5)-0.46)*0.5);
 `, {}, {bg:0x0a1018}); }
-function buildGreenlandScene(){ return dioGroundScene('', `
-  col=vec3(0.86,0.9,0.96)*(0.85+0.18*fbm(vec3(uv*7.0,0.0)));
-  col-=smoothstep(0.02,0.0, abs(fract(fbm(vec3(uv*vec2(6.0,3.0),2.0))*6.0)-0.5)-0.45)*0.25;
-  col=mix(col, vec3(0.2,0.55,0.8), exp(-pow((uv.x-(0.5+0.2*sin(uv.y*4.0)))*26.0,2.0))*0.7);
-`, {}, {bg:0x10151c}); }
-function buildSaharaScene(){ return dioGroundScene('', `
-  float dunes=0.5+0.5*sin(uv.x*42.0 + fbm(vec3(uv*4.0,0.0))*5.0 + uv.y*4.0);
-  col=vec3(0.82,0.6,0.34)*(0.55+0.6*dunes)*(0.9+0.2*fbm(vec3(uv*18.0,1.0)));
-`, {}, {bg:0x140e06}); }
+function buildGreenlandScene(){ return dioTerrain({
+  amp:95, sky:0x0e1722, sunPos:[-0.5,0.4,0.6], sunCol:0xeef4ff, sunI:2.4, skyLight:0xbcd2ff, fogFar:950,
+  height:(x,y)=>{
+    let h=0.5 + 0.28*_fbm2(x*2.3+2.0, y*2.3, 4);                 // gently rolling ice dome
+    const cx=0.5+0.18*Math.sin(y*4.0);
+    h -= 0.30*Math.exp(-Math.pow((x-cx)*10.0,2));                // a meltwater channel cutting through
+    return h;
+  },
+  color:(c,hn)=>{ if(hn<0.30){ c.setRGB(0.25,0.55,0.82); return; }   // meltwater blue in the low channel
+    c.setRGB(0.88,0.92,0.98); },                                     // white-blue ice
+  cam:{ radius:310, height:120, target:_V(0,25,0), rate:0.015 }
+}); }
+function buildSaharaScene(){ return dioTerrain({
+  amp:165, sky:0x1a1206, sunPos:[-0.88,0.30,0.3], sunCol:0xffd79a, sunI:3.0, fogFar:1050,
+  height:(x,y)=> 0.5 + 0.34*Math.sin(x*15.0 + _fbm2(x*3,y*3,3)*4.0 + y*2.4) + 0.22*_fbm2(x*4,y*4,4),  // long dune crests
+  color:(c,hn)=>{ const t=hn; c.setRGB(0.86-0.14*(1.0-t), 0.64-0.16*(1.0-t), 0.36-0.10*(1.0-t)); },     // warm sand, lee sides darker
+  cam:{ radius:300, height:95, target:_V(0,35,0), rate:0.015 }
+}); }
 function buildPalmScene(){ return dioGroundScene('', `
   col=vec3(0.04,0.3,0.46)*(0.8+0.2*fbm(vec3(uv*8.0,uT*0.02)));
   vec2 c=uv-0.5; float ang=atan(c.y,c.x); float r=length(c);
