@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.41">
+<meta name="app-rev" content="3.42">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -2571,7 +2571,16 @@ async function loadSatellites(){
     const g=SAT_GROUPS[gi];
     if(res.src==='snapshot') snapshot=true; if(res.src==='live') anyLive=true;
     for(const rec of res.recs){
-      if(rec.id===25544) continue;            // ISS handled by the dedicated beacon
+      if(rec.id===25544){                     // ISS handled by the dedicated beacon
+        if(!(groups.iss && groups.iss.satrecs[0])){   // live fetch failed -> fall back to the snapshot so 📍 passes / Ride the ISS still work
+          try{ const sr=satellite.twoline2satrec(rec.l1, rec.l2);
+            groups.iss={ satrecs:[sr], beacon: makeBeacon(0x9bf0ff, { tag:'Low Earth Orbit', name:'ISS — ~250 mi',
+              text:'The International Space Station, tracked live. It orbits ~250 mi up at 17,500 mph, circling Earth every ~92 minutes.' }) };
+            issTrail(sr); buildGroundTrack(sr);
+          }catch(_){ }
+        }
+        continue;
+      }
       tles.push({ l1:rec.l1, l2:rec.l2, color:g.color, size:g.size });
       cloudMeta.push({ name:rec.name||g.short, id:rec.id, tag:g.tag, short:g.short });
     }
@@ -2921,7 +2930,7 @@ document.getElementById('homeBtn').addEventListener('click', ()=>{
 const titleEl=document.getElementById('title');
 function hideIntro(){ titleEl.classList.add('hidden'); }
 function showIntro(){ titleEl.classList.remove('hidden'); }
-document.addEventListener('pointerdown', e=>{ if(!e.target.closest('#homeBtn')) hideIntro(); }, true);
+document.addEventListener('pointerdown', e=>{ if(!e.target.closest('#homeBtn') && !e.target.closest('#tourBtn')) hideIntro(); }, true);   // don't make the intro click-through before the tour button's own click lands
 
 // ---------- Collapsible nav groups ----------
 document.querySelectorAll('#nav .navhead').forEach(h=>h.addEventListener('click', ()=>{
