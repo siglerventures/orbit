@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.39">
+<meta name="app-rev" content="3.40">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -3332,6 +3332,58 @@ function buildLightningScene(){ return dioGroundScene('', `
   col+=vec3(0.7,0.82,1.0)*fl*1.6;
   col+=vec3(1.0,0.9,0.6)*smoothstep(0.9,1.0,fbm(vec3(uv*50.0,9.0)))*0.3;
 `, {}, {bg:0x010206}); }
+function buildHimalayaScene(){ return dioGroundScene('', `
+  float h=fbm(vec3(uv*5.0,0.0))+0.5*fbm(vec3(uv*12.0,2.0));
+  col=mix(vec3(0.32,0.26,0.22), vec3(0.92,0.94,1.0), smoothstep(0.25,0.6,h));
+  float dh=fbm(vec3((uv+vec2(0.012,0.0))*5.0,0.0))-fbm(vec3((uv-vec2(0.012,0.0))*5.0,0.0));
+  col*=0.7+1.6*clamp(dh*6.0+0.3,0.0,1.0);
+`, {}, {bg:0x10141c}); }
+function buildBaikalScene(){ return dioGroundScene('', `
+  col=vec3(0.5,0.66,0.74)*(0.8+0.25*fbm(vec3(uv*6.0,0.0)));
+  col=mix(col, vec3(0.1,0.5,0.6), smoothstep(0.03,0.0, abs(fract(fbm(vec3(uv*4.0,2.0))*5.0)-0.5)-0.45)*0.8);
+  col=mix(col, vec3(0.85,0.95,1.0), smoothstep(0.02,0.0, abs(fract(fbm(vec3(uv*9.0,5.0))*7.0)-0.5)-0.46)*0.5);
+`, {}, {bg:0x0a1018}); }
+function buildGreenlandScene(){ return dioGroundScene('', `
+  col=vec3(0.86,0.9,0.96)*(0.85+0.18*fbm(vec3(uv*7.0,0.0)));
+  col-=smoothstep(0.02,0.0, abs(fract(fbm(vec3(uv*vec2(6.0,3.0),2.0))*6.0)-0.5)-0.45)*0.25;
+  col=mix(col, vec3(0.2,0.55,0.8), exp(-pow((uv.x-(0.5+0.2*sin(uv.y*4.0)))*26.0,2.0))*0.7);
+`, {}, {bg:0x10151c}); }
+function buildSaharaScene(){ return dioGroundScene('', `
+  float dunes=0.5+0.5*sin(uv.x*42.0 + fbm(vec3(uv*4.0,0.0))*5.0 + uv.y*4.0);
+  col=vec3(0.82,0.6,0.34)*(0.55+0.6*dunes)*(0.9+0.2*fbm(vec3(uv*18.0,1.0)));
+`, {}, {bg:0x140e06}); }
+function buildPalmScene(){ return dioGroundScene('', `
+  col=vec3(0.04,0.3,0.46)*(0.8+0.2*fbm(vec3(uv*8.0,uT*0.02)));
+  vec2 c=uv-0.5; float ang=atan(c.y,c.x); float r=length(c);
+  float fronds=smoothstep(0.06,0.0, abs(sin(ang*8.0))*r - 0.02)*step(r,0.4);
+  float trunk=smoothstep(0.04,0.0, abs(c.x))*step(c.y,0.0)*step(-0.42,c.y);
+  float crescent=smoothstep(0.02,0.0, abs(r-0.46));
+  col=mix(col, vec3(0.75,0.7,0.5), clamp(max(max(fronds,trunk),crescent),0.0,1.0));
+`, {}, {bg:0x021420}); }
+function buildPyramidsScene(){ return dioGroundScene('', `
+  vec3 desert=vec3(0.78,0.62,0.4)*(0.8+0.2*fbm(vec3(uv*12.0,0.0)));
+  float grid=step(0.5,fract(uv.x*40.0))*step(0.5,fract(uv.y*40.0));
+  col=mix(desert, mix(vec3(0.3,0.32,0.34), vec3(0.5,0.52,0.55), grid), smoothstep(0.55,0.62,uv.x));
+  for(int i=0;i<3;i++){ float fi=float(i); vec2 pc=vec2(0.34+fi*0.06, 0.46+fi*0.03);
+    col=mix(col, vec3(0.72,0.6,0.42), smoothstep(0.035,0.02, abs(uv.x-pc.x)+abs(uv.y-pc.y)));
+    col-=smoothstep(0.05,0.0, abs(uv.x-pc.x-0.03))*step(uv.y,pc.y)*0.1; }
+`, {}, {bg:0x140e06}); }
+function buildAlmeriaScene(){ return dioGroundScene('', `
+  float plot=step(0.08,fract(uv.x*48.0))*step(0.08,fract(uv.y*48.0));
+  col=mix(vec3(0.3,0.28,0.24), vec3(0.82,0.85,0.9), plot)*(0.85+0.2*fbm(vec3(uv*30.0,1.0)));
+  col+=smoothstep(0.9,1.0,fbm(vec3(uv*80.0,3.0)))*0.3;
+`, {}, {bg:0x0c0e10}); }
+function buildPivotScene(){ return dioGroundScene('', `
+  col=vec3(0.62,0.5,0.3)*(0.8+0.2*fbm(vec3(uv*14.0,0.0)));
+  vec2 g=fract(uv*6.0)-0.5;
+  col=mix(col, vec3(0.15,0.5,0.16)*(0.8+0.3*fbm(vec3(uv*40.0,2.0))), smoothstep(0.42,0.36,length(g)));
+`, {}, {bg:0x100c06}); }
+function buildGreatWallScene(){ return dioGroundScene('', `
+  vec3 land=vec3(0.5,0.42,0.3)*(0.7+0.4*fbm(vec3(uv*8.0,0.0)));
+  col=land;
+  float wall=exp(-pow((uv.y-(0.5+0.12*sin(uv.x*7.0)+0.04*sin(uv.x*23.0)))*120.0,2.0));
+  col=mix(col, land*1.10, wall);   // only ~10% brighter than the land it sits on — the myth, made literal
+`, {}, {bg:0x120c06}); }
 
 // --- The curated list. lat/lon are accurate; lat:null marks an unpinned phenomenon. ---
 const PLANETWATCH=[
@@ -3380,6 +3432,11 @@ const PLANETWATCH=[
   { key:'lightning', name:'Lightning Storms at Night', emoji:'⚡', lat:null, lon:null, tag:'Dynamic phenomenon',
     blurb:`After dark, thunderstorm cells flicker like camera flashes across whole continents — the ISS crew sees dozens of storms lighting up at once from above. (A representative scene.)`, build:buildLightningScene },
 ];
+// Give the remaining geographic landmarks a close-up too, so every item has one.
+const _PW_EXTRA={ everest:buildHimalayaScene, baikal:buildBaikalScene, greenland:buildGreenlandScene,
+  sahara:buildSaharaScene, palm:buildPalmScene, pyramids:buildPyramidsScene, almeria:buildAlmeriaScene,
+  pivot:buildPivotScene, greatwall:buildGreatWallScene };
+PLANETWATCH.forEach(p=>{ if(!p.build && _PW_EXTRA[p.key]) p.build=_PW_EXTRA[p.key]; });
 const PLANETWATCH_DIORAMAS=PLANETWATCH.filter(p=>p.build);
 
 // --- Pin layer: small markers + clickable labels, riding earthGroup. ---
@@ -3391,7 +3448,8 @@ function planetwatchPin(item){
   const pin=new THREE.Mesh(_PLPIN_GEO,_PLPIN_MAT); pin.position.copy(v); planetGroup.add(pin); item._anchor=pin;
   const el=document.createElement('div'); el.className='place-label'; el.textContent=(item.emoji||'🌍')+' '+item.name;
   el.addEventListener('click', e=>{ e.stopPropagation(); visitPlace(item); });
-  const lbl=new CSS2DObject(el); lbl.position.copy(v); planetGroup.add(lbl); skyLabels.push(lbl);
+  el.addEventListener('dblclick', e=>{ e.stopPropagation(); if(item.build) enterDiorama('planet', item); });   // double-click -> straight into the close-up
+  const lbl=new CSS2DObject(el); lbl.position.copy(v); planetGroup.add(lbl); skyLabels.push(lbl); item._label=lbl;
 }
 PLANETWATCH.forEach(item=>{ if(item.lat!=null) planetwatchPin(item); });
 
@@ -3479,7 +3537,8 @@ function tick(now){
   moonLabel.visible = !occludedByEarth(moonLabel) && !(selection && selection.kind==='obj' && selection.obj===moon);   // hide own label when selected (avoids double "The Moon")
   // Sky labels: visible only when their layer is ON *and* not behind the globe.
   // (CSS2DRenderer ignores parent-group visibility, so we must gate it here.)
-  for(const lbl of skyLabels){ lbl.visible = !!(lbl.parent && lbl.parent.visible) && !occludedByEarth(lbl); }
+  for(const lbl of skyLabels){ lbl.visible = !!(lbl.parent && lbl.parent.visible) && !occludedByEarth(lbl)
+    && !(selection && selection.kind==='place' && selection.item && selection.item._label===lbl); }   // hide a landmark's own pin label while it's selected (the selection label already names it)
   updateSelection();
   if(riding){ updateRide(date); selMarker.visible=false; }                                       // locked to the ISS
   else if(focus){
