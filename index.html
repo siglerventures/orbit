@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.40">
+<meta name="app-rev" content="3.41">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -3213,9 +3213,10 @@ const fmt=n=>Math.round(n).toLocaleString();
 function dioGround(decls, body, uniforms){
   const geo=_track(new THREE.PlaneGeometry(1600,1600,1,1));
   const u=Object.assign({ uT:{value:0} }, uniforms||{});
-  const frag='#define PI 3.14159265\n'+SNOISE+'\nvarying vec2 vUv; uniform float uT;\n'+(decls||'')
-    +'\nfloat fbm(vec3 p){float a=0.5,s=0.0;for(int i=0;i<5;i++){s+=a*snoise(p);p*=2.02;a*=0.5;}return s;}\n'
-    +'void main(){vec2 uv=vUv;vec3 col=vec3(0.0);\n'+body+'\ngl_FragColor=vec4(clamp(col,0.0,1.6),1.0);}';
+  // SNOISE already provides snoise() AND fbm() — do not redefine fbm here (a
+  // duplicate function body is a GLSL compile error that silently blanks the scene).
+  const frag=SNOISE+'\nvarying vec2 vUv; uniform float uT;\n'+(decls||'')
+    +'\nvoid main(){vec2 uv=vUv;vec3 col=vec3(0.0);\n'+body+'\ngl_FragColor=vec4(clamp(col,0.0,1.6),1.0);}';
   const mat=_track(new THREE.ShaderMaterial({ uniforms:u,
     vertexShader:'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
     fragmentShader:frag }));
