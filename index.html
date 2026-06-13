@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.52">
+<meta name="app-rev" content="3.53">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -477,6 +477,7 @@ document.addEventListener('DOMContentLoaded', function(){
     <button class="prow" id="aimBtn" style="justify-content:center; margin-top:6px; display:none">🧭 Point phone at the sky</button>
     <div id="aimOut"></div>
     <div id="comingUp"></div>
+    <div id="onThisDay"></div>
   </div>
 
   <div id="nav" class="panel" style="background:none;border:none;backdrop-filter:none;padding:0;">
@@ -3061,6 +3062,8 @@ const HOME_POS=new THREE.Vector3(0,0.5,2.6);
 document.getElementById('homeBtn').addEventListener('click', ()=>{
   if(typeof exitDiorama==='function' && dioActive) exitDiorama();   // Home from inside a close-up returns to the globe
   document.getElementById('topbar').classList.remove('search-open');   // tuck the search bar away
+  if(cloud) cloud.visible=true;        // un-hide satellites (a historical jump hides them)
+  simEpoch=Date.now(); wallEpoch=performance.now(); speed=1;   // clock back to live now
   deselect();                          // clear selection + info card
   focusConstellation(null);            // drop any constellation size boost / isolation
   resetSkywatch();                     // turn off constellations / showers / comets / Milky Way + clear highlight
@@ -3284,6 +3287,55 @@ function renderConjunctions(){
   host.innerHTML=html;
   host.querySelectorAll('.cjrow').forEach(r=>r.addEventListener('click', ()=>jumpToConjunction(_conjCache[+r.dataset.i])));
 }
+// ---------- "On this day in space": jump the clock to a famous moment, framed. ----------
+// Satellites use current TLEs (meaningless at these dates), so a jump hides the cloud
+// and frames the Moon / Sun / Earth instead; Home restores the live cloud + clock.
+const SPACE_EVENTS=[
+  { date:'1957-10-04T19:28:00Z', title:'Sputnik 1 — the Space Age begins', frame:'earth',
+    blurb:'The USSR launches Sputnik 1, the first artificial satellite — a polished sphere beeping from orbit that changed the world overnight.' },
+  { date:'1961-04-12T06:07:00Z', title:'Gagarin — first human in space', frame:'earth',
+    blurb:'Yuri Gagarin orbits Earth once aboard Vostok 1, becoming the first human to leave the planet.' },
+  { date:'1965-03-18T08:30:00Z', title:'First spacewalk', frame:'earth',
+    blurb:'Alexei Leonov floats outside Voskhod 2 for ~12 minutes — the first time a human walks in space.' },
+  { date:'1968-12-24T16:00:00Z', title:'Apollo 8 — Earthrise', frame:'moon',
+    blurb:'The first crew to orbit the Moon watches Earth rise over the lunar limb, taking one of the most famous photographs ever.' },
+  { date:'1969-07-20T20:17:00Z', title:'Apollo 11 — first Moon landing', frame:'moon',
+    blurb:'Armstrong and Aldrin touch down at Tranquility Base; humans walk on the Moon for the first time.' },
+  { date:'1977-09-05T12:56:00Z', title:'Voyager 1 launches', frame:'earth',
+    blurb:'Voyager 1 begins its grand tour of the outer planets — now the most distant human-made object, in interstellar space.' },
+  { date:'1990-04-24T12:33:00Z', title:'Hubble Space Telescope launches', frame:'earth',
+    blurb:'Shuttle Discovery carries Hubble to orbit, opening a thirty-year window onto the deep universe.' },
+  { date:'1998-11-20T06:40:00Z', title:'First ISS module — Zarya', frame:'earth',
+    blurb:'Zarya, the first module of the International Space Station, reaches orbit — the seed of the largest structure ever built in space.' },
+  { date:'2017-08-21T18:25:00Z', title:'The Great American total solar eclipse', frame:'eclipse',
+    blurb:'A total solar eclipse sweeps coast to coast across the United States, watched by tens of millions.' },
+  { date:'2021-12-25T12:20:00Z', title:'James Webb Space Telescope launches', frame:'earth',
+    blurb:'The largest space telescope ever flown lifts off to its station a million miles from Earth, to see the first galaxies.' }
+];
+function jumpToHistEvent(e){
+  const t=Date.parse(e.date); if(isNaN(t)) return;
+  if(typeof exitDiorama==='function' && dioActive) exitDiorama();
+  if(cloud) cloud.visible=false;                             // current orbital data doesn't apply to this date
+  simEpoch=t; wallEpoch=performance.now(); setSpeed(1);
+  passPanel.classList.remove('show');
+  const d=new Date(t); deselect();
+  if(e.frame==='moon') focusMoon();
+  else if(e.frame==='sun'||e.frame==='eclipse') lookAtSky(sunSceneDir(d));
+  else { lookAtSky(null); setTarget(2.7); }                  // earth: a calm globe view
+  showInfo({ tag:'On this day · '+d.getUTCFullYear(), name:e.title,
+    text:e.blurb+' — clock jumped to '+d.toUTCString()+'. (Live satellites are hidden here; press Home to return to now.)' });
+}
+function renderOnThisDay(){
+  const host=document.getElementById('onThisDay'); if(!host) return;
+  const now=new Date(), md=(now.getUTCMonth()+1)*100+now.getUTCDate();
+  const list=SPACE_EVENTS.map(e=>{ const d=new Date(e.date); return { e, d, today:((d.getUTCMonth()+1)*100+d.getUTCDate())===md }; })
+    .sort((a,b)=> (b.today-a.today) || (a.d.getUTCMonth()-b.d.getUTCMonth()) || (a.d.getUTCDate()-b.d.getUTCDate()));
+  let html='<div class="exhead" style="margin-top:9px">On this day in space — tap to jump</div>';
+  html+=list.map(({e,d,today},i)=>`<button class="prow cjrow" data-i="${i}"><span>${today?'📅 ':''}${e.title}</span>`
+    +`<span class="pdim">${d.toLocaleDateString(undefined,{month:'short',day:'numeric'})}, ${d.getUTCFullYear()}</span></button>`).join('');
+  host.innerHTML=html;
+  host.querySelectorAll('.cjrow').forEach((r,i)=>r.addEventListener('click', ()=>jumpToHistEvent(list[i].e)));
+}
 function renderPasses(){
   renderTonight();                                           // moon · planets · meteors, then the ISS passes below
   aimBtn.style.display = aimSupported() ? 'flex' : 'none';   // sky-pointing is touch-device only
@@ -3416,6 +3468,7 @@ passBtn.addEventListener('click', ()=>{
   if(passPanel.classList.contains('show')){ passPanel.classList.remove('show'); return; }
   explorePanel.classList.remove('show'); passPanel.classList.add('show');
   renderConjunctions();                                      // upcoming sky pairings (geocentric — no location needed)
+  renderOnThisDay();                                         // famous space anniversaries to jump to
   if(!(groups.iss && groups.iss.satrecs[0])){ passStat.textContent='ISS data isn’t loaded yet — try again in a moment.'; passList.innerHTML=''; return; }
   if(observerGd){ safeRenderPasses(); return; }
   if(!navigator.geolocation){ fallbackLocate('Geolocation isn’t available here —'); return; }
