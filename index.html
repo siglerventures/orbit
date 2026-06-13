@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.45">
+<meta name="app-rev" content="3.46">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -2687,6 +2687,23 @@ canvas.addEventListener('click', e=>{
     if(selection && selection.kind==='cloud' && selection.idx===cloudHit.index) deselect();  // re-click to unselect
     else selectCloud(cloudHit.index, false);             // click a satellite -> just select it (no auto-swing); a marker shows where it is
   } else { deselect(); }                                  // empty space clears the selection (also exits focus)
+});
+
+// Double-click a Planetwatch pin on the globe (its dot, or anywhere near it) -> dive
+// straight into that landmark's close-up, same as double-clicking its label.
+const _pwHit=new THREE.Vector3();
+canvas.addEventListener('dblclick', e=>{
+  if(!planetGroup.visible) return;                        // only when the pins are shown
+  let best=null, bestD=28;                                // nearest pin within 28px of the cursor
+  for(const item of PLANETWATCH){
+    if(!item._anchor || !item.build || occludedByEarth(item._anchor)) continue;   // need a close-up + must be on the near side
+    item._anchor.getWorldPosition(_pwHit); _pwHit.project(camera);
+    if(_pwHit.z>1) continue;
+    const sx=(_pwHit.x*0.5+0.5)*innerWidth, sy=(-_pwHit.y*0.5+0.5)*innerHeight;
+    const d=Math.hypot(sx-e.clientX, sy-e.clientY);
+    if(d<bestD){ bestD=d; best=item; }
+  }
+  if(best){ e.preventDefault(); enterDiorama('planet', best); }
 });
 
 // Hover affordance: turn the cursor into a pointer over any clickable target
