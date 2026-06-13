@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.49">
+<meta name="app-rev" content="3.50">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -258,6 +258,19 @@ document.addEventListener('DOMContentLoaded', function(){
   #passBtn:hover { transform:translateY(-1px); background:radial-gradient(circle at 32% 28%, rgba(120,220,150,0.5), rgba(30,45,72,0.82));
     box-shadow:0 0 18px rgba(120,220,150,0.45), 0 4px 14px rgba(0,0,0,0.4); }
   #passBtn:active { transform:scale(0.9); }
+  #shareBtn { position:relative; width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    font-size:16px; cursor:pointer; -webkit-tap-highlight-color:transparent;
+    background:radial-gradient(circle at 32% 28%, rgba(180,140,240,0.30), rgba(20,30,48,0.72));
+    border:1px solid rgba(180,140,240,0.45); backdrop-filter:blur(6px); box-shadow:0 4px 14px rgba(0,0,0,0.4);
+    transition:transform .15s, box-shadow .25s, border-color .25s, background .25s; }
+  #shareBtn:hover { transform:translateY(-1px); background:radial-gradient(circle at 32% 28%, rgba(180,140,240,0.5), rgba(30,45,72,0.82));
+    box-shadow:0 0 18px rgba(180,140,240,0.45), 0 4px 14px rgba(0,0,0,0.4); }
+  #shareBtn:active { transform:scale(0.9); }
+  #toast { position:fixed; left:50%; bottom:72px; transform:translateX(-50%) translateY(10px); z-index:95;
+    background:rgba(20,30,48,0.94); color:#eaf3ff; border:1px solid rgba(180,140,240,0.5); border-radius:10px;
+    padding:9px 16px; font-size:13px; box-shadow:0 8px 24px rgba(0,0,0,0.5); opacity:0; pointer-events:none;
+    transition:opacity .2s, transform .2s; }
+  #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
   #passes { position:fixed; z-index:60; top:64px; left:50%; transform:translateX(-50%);
     width:312px; max-width:92vw; display:none; flex-direction:column; gap:5px; padding:10px; }
   #passes.show { display:flex; }
@@ -433,12 +446,14 @@ document.addEventListener('DOMContentLoaded', function(){
       </svg>
     </button>
     <button id="passBtn" title="Your location & satellite passes" aria-label="Your location & satellite passes">📍</button>
+    <button id="shareBtn" title="Copy a link to this exact view" aria-label="Share this view">🔗</button>
     <button id="exploreBtn" title="Search" aria-label="Search">✨</button>
     <div id="search" class="panel">
       <input id="searchInput" type="text" placeholder="Search satellite or NORAD id…" autocomplete="off" spellcheck="false" />
       <span id="searchMsg"></span>
     </div>
   </div>
+  <div id="toast"></div>
 
   <div id="explore" class="panel">
     <div class="exhead">Live highlights — click to fly</div>
@@ -3766,8 +3781,56 @@ function tick(now){
   requestAnimationFrame(tick);
 }
 
+// ---------- Shareable deep-links: encode/restore the current view via the URL hash. ----------
+function _r3(n){ return Math.round(n*1000)/1000; }
+function buildShareHash(){
+  const p=new URLSearchParams();
+  p.set('t', Math.round(simNow()));                              // sim time (absolute ms)
+  if(speed!==1) p.set('s', speed);
+  if(dioActive && dioObj){                                       // inside a close-up: encode which one
+    const id = (dioKind==='planet' ? (dioObj.key||dioObj.name) : dioObj.name) || '';
+    p.set('d', dioKind+'~'+id);
+  } else {                                                       // on the globe: camera + look-at (+ selected sat)
+    p.set('c', [camera.position.x,camera.position.y,camera.position.z].map(_r3).join(','));
+    p.set('g', [controls.target.x,controls.target.y,controls.target.z].map(_r3).join(','));
+    if(selection && selection.kind==='cloud'){ const m=cloudMeta[selection.idx]; if(m&&m.id) p.set('sel', m.id); }
+  }
+  return '#'+p.toString();
+}
+function showToast(msg){ const el=document.getElementById('toast'); if(!el) return; el.textContent=msg; el.classList.add('show');
+  clearTimeout(showToast._t); showToast._t=setTimeout(()=>el.classList.remove('show'), 2600); }
+document.getElementById('shareBtn').addEventListener('click', ()=>{
+  history.replaceState(null,'',buildShareHash());               // reflect the view in the address bar
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(location.href).then(
+      ()=>showToast('🔗 Link copied — share this exact view'),
+      ()=>showToast('🔗 Link is in the address bar — copy it to share'));
+  } else showToast('🔗 Link is in the address bar — copy it to share');
+});
+function applyHash(){                                            // time / speed / camera — apply before the first frame
+  if(!location.hash || location.hash.length<2) return;
+  const p=new URLSearchParams(location.hash.slice(1));
+  const t=parseInt(p.get('t'),10); if(!isNaN(t)){ simEpoch=t; wallEpoch=performance.now(); }
+  const s=parseFloat(p.get('s')); if(!isNaN(s) && typeof setSpeed==='function') setSpeed(s);
+  const c=p.get('c'); if(c){ const a=c.split(',').map(Number); if(a.length===3 && a.every(x=>!isNaN(x))) camera.position.set(a[0],a[1],a[2]); }
+  const g=p.get('g'); if(g){ const a=g.split(',').map(Number); if(a.length===3 && a.every(x=>!isNaN(x))) controls.target.set(a[0],a[1],a[2]); }
+  targetDist=THREE.MathUtils.clamp(camera.position.length(), MIND, MAXD);
+  if(controls.update) controls.update();
+}
+function applyHashAfterLoad(){                                   // diorama / satellite selection — after the cloud exists
+  if(!location.hash || location.hash.length<2) return;
+  const p=new URLSearchParams(location.hash.slice(1));
+  const d=p.get('d');
+  if(d){ const i=d.indexOf('~'); const kind=i<0?d:d.slice(0,i), id=i<0?'':d.slice(i+1);
+    const list=dioListFor(kind)||[]; const obj=list.find(o=>(o.key&&o.key===id)||o.name===id);
+    if(obj){ enterDiorama(kind,obj); return; } }
+  const sel=p.get('sel');
+  if(sel){ const idx=cloudMeta.findIndex(m=>m && String(m.id)===String(sel)); if(idx>=0) selectCloud(idx,true); }
+}
+
 manager.onLoad=()=>{ document.getElementById('loader').classList.add('hide'); };
-loadSatellites();
+try{ applyHash(); }catch(_){ }                                  // restore a shared view (no-op without a hash)
+loadSatellites().then(()=>{ try{ applyHashAfterLoad(); }catch(_){ } });
 loadSatcat();   // warm the satellite-metadata cache so info cards are enriched on first click
 requestAnimationFrame(tick);
 
