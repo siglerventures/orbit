@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.56">
+<meta name="app-rev" content="3.57">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -624,6 +624,7 @@ const eciToScene = (p, v) => { v.set(p.x / EARTH_KM, p.z / EARTH_KM, -p.y / EART
 const EX_C = 1000, EX_K = 5.1;
 let morph = 0, morphTarget = 0;            // 0 = true scale, 1 = exaggerated
 let morphActive = false;                   // true while easing (drives per-frame re-scale)
+let scaleStage = 0;                        // scale toggle: 0 True · 1 Exaggerated · 2 Solar System
 // Gentle default lift of the satellite shells off the surface, so the dense LEO
 // cloud reads as a band ORBITING above Earth (with a visible gap) rather than a
 // skin painted on it. Display-only: the per-satellite altitude readout still
@@ -1965,18 +1966,43 @@ function clearDiorama(){
 }
 const MILKYWAY={ name:'The Milky Way', tag:'Our galaxy', fact:'A barred spiral of 100–400 billion stars, ~100,000 light-years across — and we live inside it, about halfway out on the Orion Arm. The hazy band across the night sky is its disk seen edge-on from within; the brightest, busiest stretch lies toward the galactic centre in Sagittarius.' };
 const AURORA={ name:'Aurora', tag:'Northern & southern lights', fact:'When charged particles from the Sun slam into the upper atmosphere and follow Earth’s magnetic field to the poles, they make oxygen and nitrogen glow — green and red from oxygen, blue and violet from nitrogen — rippling in vast curtains 100–300 km overhead.' };
+const SOLAR={ name:'The Solar System', tag:'Heliocentric view', fact:'Zoomed all the way out: the Sun at the centre with the eight planets on their real current orbital positions — Mercury, Venus, Earth and Mars close in, then the giants Jupiter, Saturn, Uranus and Neptune sweeping outward. Orbit radii are gently compressed so the whole system stays navigable.' };
 // Resolved lazily (at click time) so it never touches SHOWERS/COMETS/etc. before
 // those lists are initialized — an eager const here aborts the whole module at load.
-function dioListFor(kind){ return ({ star:STARS, const:CONSTELLATIONS, shower:SHOWERS, comet:COMETS, asteroid:ASTEROIDS, milkyway:[MILKYWAY], aurora:[AURORA], sat:SAT_DIORAMAS, planet:PLANETWATCH_DIORAMAS })[kind]; }
+function dioListFor(kind){ return ({ star:STARS, const:CONSTELLATIONS, shower:SHOWERS, comet:COMETS, asteroid:ASTEROIDS, milkyway:[MILKYWAY], aurora:[AURORA], solar:[SOLAR], sat:SAT_DIORAMAS, planet:PLANETWATCH_DIORAMAS })[kind]; }
 function dioMeta(kind,o){
   if(kind==='const')    return { title:o.name, tag:'Constellation', text:o.fact };
   if(kind==='shower')   return { title:o.name, tag:'Meteor shower', text:'When Earth ploughs through dust shed by '+o.src+', up to ~'+o.zhr+' meteors an hour appear to rain from this point in '+(o.name)+'. The "shooting stars" are sand- to pebble-sized grains burning up ~80 km overhead at tens of thousands of mph.' };
   if(kind==='comet')    return { title:o.name, tag:'Comet', text:o.fact };
   if(kind==='asteroid') return { title:o.name, tag:'Asteroid', text:o.fact };
-  if(kind==='milkyway'||kind==='aurora') return { title:o.name, tag:o.tag, text:o.fact };
+  if(kind==='milkyway'||kind==='aurora'||kind==='solar') return { title:o.name, tag:o.tag, text:o.fact };
   if(kind==='sat'){ const c=o._ctx||{}; return { title:c.name && c.name!==o.name ? o.name+' — '+c.name : o.name, tag:c.orbit||o.orbit||'Satellite', text:satCardText(o) }; }
   if(kind==='planet')   return { title:o.name, tag:o.tag||'Earth from space', text:o.blurb };
   return { title:o.name, tag:o.tag||'Star', text:o.fact };   // star
+}
+// Heliocentric "zoom all the way out" — Sun at centre, planets on their real current
+// orbital positions (radii gently compressed via aAU^0.62 so the system stays navigable).
+function buildSolarSystemScene(){
+  dioScene.background=new THREE.Color(0x05060c);
+  const sun=_track(new THREE.Mesh(new THREE.SphereGeometry(6.5,32,32), new THREE.MeshBasicMaterial({ color:0xfff3c0 })));
+  dioAdd(sun);
+  const glow=_track(new THREE.Sprite(new THREE.SpriteMaterial({ map:STAR_TEX, color:0xffcf72, transparent:true, opacity:0.9, blending:THREE.AdditiveBlending, depthWrite:false }))); glow.scale.set(64,64,1); dioAdd(glow);
+  dioAdd(new THREE.PointLight(0xfff4e0, 3.0, 0, 0));   // decay 0 -> lights the far planets evenly
+  dioAdd(new THREE.AmbientLight(0xffffff, 0.20));
+  const T=(Date.now()/86400000 + 2440587.5 - 2451545.0)/36525;
+  const PLS=[['Mercury',1.0,0xb9a89a],['Venus',1.7,0xe6cd8a],['Earth',1.8,0x6ea8ff],['Mars',1.3,0xe2683b],
+             ['Jupiter',3.8,0xd9a066],['Saturn',3.2,0xe7d4a0],['Uranus',2.5,0x9fd6e6],['Neptune',2.4,0x6f8cff]];
+  for(const [name,rad,col] of PLS){
+    const h=plHelio(name,T), aAU=Math.hypot(h[0],h[1],h[2]), rScene=Math.pow(aAU,0.62)*26;
+    const dir=new THREE.Vector3(h[0],h[2],-h[1]).normalize();               // ecliptic -> scene (orbits lie in XZ)
+    const m=_track(new THREE.Mesh(new THREE.SphereGeometry(rad,24,24),
+      new THREE.MeshStandardMaterial({ color:col, roughness:0.85, metalness:0.0, emissive:col, emissiveIntensity:0.12 })));
+    m.position.copy(dir).multiplyScalar(rScene); dioAdd(m);
+    const pts=[]; for(let k=0;k<=160;k++){ const a=k/160*Math.PI*2; pts.push(new THREE.Vector3(Math.cos(a)*rScene,0,Math.sin(a)*rScene)); }
+    dioAdd(_track(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineBasicMaterial({ color:0x33405e, transparent:true, opacity:0.55 }))));
+  }
+  return { radius:300, height:175, target:_V(0,0,0), rate:0.03 };
 }
 function buildScene(kind,o){
   if(kind==='const')    return buildConstScene(o);
@@ -1985,6 +2011,7 @@ function buildScene(kind,o){
   if(kind==='asteroid') return buildAsteroidScene(o);
   if(kind==='milkyway') return buildMilkyWayScene();
   if(kind==='aurora')   return buildAuroraScene();
+  if(kind==='solar')    return buildSolarSystemScene();
   if(kind==='sat')      return buildSatScene(o);
   if(kind==='planet')   return o.build({ item:o });
   return buildStarScene(o);
@@ -2010,6 +2037,7 @@ function exitDiorama(){
   if(renderPass){ renderPass.scene=scene; renderPass.camera=camera; }
   document.body.classList.remove('dio-on'); dioramaEl.classList.remove('show');
   labelRenderer.domElement.style.display='';
+  if(scaleStage===2){ scaleStage=0; if(scaleBtn){ scaleBtn.textContent='Scale · True'; scaleBtn.classList.remove('active'); } }  // leaving the heliocentric view
 }
 function dioGo(delta){ const n=dioList.length; if(n<2) return; const next=dioList[((dioIdx+delta)%n+n)%n];
   if(dioKind==='sat' && next) next._ctx=null;   // hopping a curated list: drop any prior live-selection context
@@ -2971,8 +2999,14 @@ document.querySelectorAll('#nav button').forEach(b=>
 // the shells so it keeps framing the same true altitude.
 const scaleBtn=document.getElementById('scaleBtn');
 scaleBtn.addEventListener('click', ()=>{
-  const camTrue=trueFromDisplay(targetDist);     // physical radius the camera is framing now
-  morphTarget = morphTarget ? 0 : 1;
+  scaleStage = (scaleStage+1)%3;                  // True -> Exaggerated -> Solar System -> True
+  if(scaleStage===2){                             // zoom all the way out to the heliocentric view
+    scaleBtn.textContent='🪐 Solar System'; scaleBtn.classList.add('active');
+    enterDiorama('solar', SOLAR);
+    return;
+  }
+  const camTrue=trueFromDisplay(targetDist);      // physical radius the camera is framing now
+  morphTarget = scaleStage===1 ? 1 : 0;
   morphActive = true;
   scaleBtn.textContent = morphTarget ? 'Scale · Exaggerated' : 'Scale · True';
   scaleBtn.classList.toggle('active', !!morphTarget);
