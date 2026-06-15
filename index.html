@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.54">
+<meta name="app-rev" content="3.55">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -266,6 +266,25 @@ document.addEventListener('DOMContentLoaded', function(){
   #shareBtn:hover { transform:translateY(-1px); background:radial-gradient(circle at 32% 28%, rgba(180,140,240,0.5), rgba(30,45,72,0.82));
     box-shadow:0 0 18px rgba(180,140,240,0.45), 0 4px 14px rgba(0,0,0,0.4); }
   #shareBtn:active { transform:scale(0.9); }
+  #topbar { flex-wrap:wrap; justify-content:center; }
+  #launchBtn { position:relative; width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    font-size:16px; cursor:pointer; -webkit-tap-highlight-color:transparent;
+    background:radial-gradient(circle at 32% 28%, rgba(240,130,90,0.30), rgba(20,30,48,0.72));
+    border:1px solid rgba(240,130,90,0.45); backdrop-filter:blur(6px); box-shadow:0 4px 14px rgba(0,0,0,0.4);
+    transition:transform .15s, box-shadow .25s, border-color .25s, background .25s; }
+  #launchBtn:hover { transform:translateY(-1px); background:radial-gradient(circle at 32% 28%, rgba(240,130,90,0.5), rgba(30,45,72,0.82));
+    box-shadow:0 0 18px rgba(240,130,90,0.45), 0 4px 14px rgba(0,0,0,0.4); }
+  #launchBtn:active { transform:scale(0.9); }
+  #launches { position:fixed; z-index:60; top:64px; left:50%; transform:translateX(-50%);
+    width:330px; max-width:92vw; max-height:80vh; overflow-y:auto; display:none; flex-direction:column; gap:5px; padding:10px; }
+  #launches.show { display:flex; }
+  #launches .exhead { font-size:10px; text-transform:uppercase; letter-spacing:1.3px; color:var(--muted); margin-bottom:3px; }
+  #launches .lrow { display:flex; flex-direction:column; gap:2px; text-align:left; background:rgba(20,30,48,0.6);
+    border:1px solid rgba(120,160,210,0.22); border-radius:9px; padding:8px 11px; }
+  #launches .lname { font-size:12.5px; color:var(--fg); font-weight:600; line-height:1.3; }
+  #launches .lmeta { font-size:11px; color:var(--muted); display:flex; justify-content:space-between; gap:8px; }
+  #launches .lcd { color:#ffd86b; white-space:nowrap; }
+  #launches a.lsrc { font-size:11.5px; color:#bcd8ff; text-decoration:none; }
   #toast { position:fixed; left:50%; bottom:72px; transform:translateX(-50%) translateY(10px); z-index:95;
     background:rgba(20,30,48,0.94); color:#eaf3ff; border:1px solid rgba(180,140,240,0.5); border-radius:10px;
     padding:9px 16px; font-size:13px; box-shadow:0 8px 24px rgba(0,0,0,0.5); opacity:0; pointer-events:none;
@@ -451,6 +470,7 @@ document.addEventListener('DOMContentLoaded', function(){
       </svg>
     </button>
     <button id="passBtn" title="Tonight over you — Moon, planets, meteors & ISS passes" aria-label="Tonight over you">📍</button>
+    <button id="launchBtn" title="Upcoming rocket launches" aria-label="Upcoming rocket launches">🚀</button>
     <button id="shareBtn" title="Copy a link to this exact view" aria-label="Share this view">🔗</button>
     <button id="exploreBtn" title="Search" aria-label="Search">✨</button>
     <div id="search" class="panel">
@@ -459,6 +479,11 @@ document.addEventListener('DOMContentLoaded', function(){
     </div>
   </div>
   <div id="toast"></div>
+
+  <div id="launches" class="panel">
+    <div class="exhead">Upcoming launches</div>
+    <div id="launchList"><div class="pdim" style="font-size:11.5px">Loading…</div></div>
+  </div>
 
   <div id="explore" class="panel">
     <div class="exhead">Live highlights — click to fly</div>
@@ -3962,6 +3987,50 @@ function tick(now){
   labelRenderer.render(scene,camera);
   requestAnimationFrame(tick);
 }
+
+// ---------- Launch tracker: upcoming rocket launches (Launch Library 2) ----------
+const launchBtn=document.getElementById('launchBtn'), launchesEl=document.getElementById('launches'), launchList=document.getElementById('launchList');
+let _launchCache=null, _launchTimer=null;
+function _countdown(ms){
+  if(ms<=0) return 'in flight / recent';
+  const s=Math.floor(ms/1000), d=Math.floor(s/86400), h=Math.floor(s%86400/3600), m=Math.floor(s%3600/60);
+  if(d>0) return `T‑ ${d}d ${h}h`; if(h>0) return `T‑ ${h}h ${m}m`; return `T‑ ${m}m ${s%60}s`;
+}
+function renderLaunchRows(){
+  if(!_launchCache) return;
+  if(!_launchCache.length){ launchList.innerHTML='<div class="pdim" style="font-size:11.5px">No upcoming launches found.</div>'; return; }
+  launchList.innerHTML=_launchCache.map(L=>{
+    const net=Date.parse(L.net), when=isNaN(net)?'':new Date(net).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+    return `<div class="lrow"><div class="lname">🚀 ${L.name}</div>`
+      +`<div class="lmeta"><span>${[L.provider,L.pad].filter(Boolean).join(' · ')}</span>`
+      +`<span class="lcd">${isNaN(net)?(L.status||'TBD'):_countdown(net-Date.now())}</span></div>`
+      +`<div class="lmeta"><span>${when}</span><span>${L.orbit?('→ '+L.orbit):''}</span></div></div>`;
+  }).join('');
+}
+async function openLaunches(){
+  if(typeof passPanel!=='undefined'&&passPanel) passPanel.classList.remove('show');
+  if(typeof explorePanel!=='undefined'&&explorePanel) explorePanel.classList.remove('show');
+  launchesEl.classList.add('show');
+  if(_launchCache){ renderLaunchRows(); return; }
+  launchList.innerHTML='<div class="pdim" style="font-size:11.5px">Loading upcoming launches…</div>';
+  try{
+    const r=await fetch('https://ll.thespacedevs.com/2.2.0/launch/upcoming/?limit=6&hide_recent_previous=true');
+    if(!r.ok) throw new Error('http '+r.status);
+    const j=await r.json();
+    _launchCache=(j.results||[]).map(x=>({
+      name:x.name||'Launch', net:x.net, status:(x.status&&(x.status.abbrev||x.status.name))||'',
+      provider:(x.launch_service_provider&&x.launch_service_provider.name)||'',
+      pad:(x.pad&&x.pad.location&&x.pad.location.name)||(x.pad&&x.pad.name)||'',
+      orbit:(x.mission&&x.mission.orbit&&x.mission.orbit.name)||''
+    }));
+    renderLaunchRows();
+    clearInterval(_launchTimer); _launchTimer=setInterval(()=>{ if(launchesEl.classList.contains('show')) renderLaunchRows(); }, 1000);
+  }catch(e){
+    launchList.innerHTML='<div class="pdim" style="font-size:11.5px">Couldn’t load live launch data from here.<br>'
+      +'<a class="lsrc" href="https://nextspaceflight.com/launches/" target="_blank" rel="noopener">See the upcoming launch schedule ↗</a></div>';
+  }
+}
+launchBtn.addEventListener('click', ()=>{ launchesEl.classList.contains('show') ? launchesEl.classList.remove('show') : openLaunches(); });
 
 // ---------- Shareable deep-links: encode/restore the current view via the URL hash. ----------
 function _r3(n){ return Math.round(n*1000)/1000; }
