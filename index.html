@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.55">
+<meta name="app-rev" content="3.56">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -934,7 +934,7 @@ const earthGroup = new THREE.Group(); scene.add(earthGroup);
 
 // ---------- Aurora: glowing light curtains around both poles (child of earthGroup) ----------
 const auroraGroup=new THREE.Group(); auroraGroup.visible=false; earthGroup.add(auroraGroup);
-const auroraUniforms={ uT:{ value:0 } };
+const auroraUniforms={ uT:{ value:0 }, uInt:{ value:1 } };   // uInt scaled by live Kp
 (function buildAurora(){
   function curtain(sign){            // +1 = borealis (north), -1 = australis (south)
     const N=200, pos=[], aH=[], aA=[], D=Math.PI/180;
@@ -953,9 +953,9 @@ const auroraUniforms={ uT:{ value:0 } };
     const mat=new THREE.ShaderMaterial({ uniforms:auroraUniforms,
       vertexShader:`attribute float aH; attribute float aA; varying float vH; varying float vA;
         void main(){ vH=aH; vA=aA; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
-      fragmentShader:`varying float vH; varying float vA; uniform float uT;
+      fragmentShader:`varying float vH; varying float vA; uniform float uT; uniform float uInt;
         void main(){ float sh=0.5+0.5*sin(vA*38.0+uT*1.6)*sin(vA*13.0-uT*0.9+1.7);
-          float a=(1.0-vH)*(0.14+0.55*sh);
+          float a=(1.0-vH)*(0.14+0.55*sh)*uInt;
           vec3 col=mix(vec3(0.20,1.0,0.5), vec3(0.6,0.15,0.9), vH*vH);   // green base -> red/purple tips
           gl_FragColor=vec4(col*a, a); }`,
       transparent:true, depthWrite:false, side:THREE.DoubleSide, blending:THREE.AdditiveBlending });
@@ -3266,7 +3266,27 @@ function renderTonight(){
   rows.push(`<div class="trow"><span>🪐 Planets up</span><span>${ups.length?ups.join(' · '):'none above the horizon'}</span></div>`);
   const sh=activeShower(date);
   if(sh) rows.push(`<div class="trow"><span>☄️ ${sh.name}</span><span>${sh.isPeak?'near peak · ':'active · '}~${sh.zhr}/hr</span></div>`);
+  // Live aurora forecast (NOAA SWPC Kp)
+  if(_kp==null){ rows.push(`<div class="trow"><span>🟢 Aurora</span><span>checking…</span></div>`); fetchKp(); }
+  else if(typeof _kp==='number'){ const bound=Math.round(66.5-2*_kp), vis=Math.abs(lat*R2D)>=bound;
+    rows.push(`<div class="trow"><span>🟢 Aurora</span><span>Kp ${_kp.toFixed(1)}${_kp>=5?' · ⚡ storm':''} · possible above ~${bound}°${vis?' · likely from you tonight':''}</span></div>`); }
   host.innerHTML=rows.join('');
+}
+// Live geomagnetic activity (NOAA SWPC planetary K-index) — drives the aurora layer + forecast line.
+let _kp=null, _kpFetching=false;
+async function fetchKp(){
+  if(_kpFetching || typeof _kp==='number') return; _kpFetching=true;
+  try{
+    const r=await fetch('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json');
+    if(!r.ok) throw new Error('http '+r.status);
+    const rows=await r.json(); let kp=null;
+    for(let i=rows.length-1;i>0;i--){ const v=parseFloat(rows[i][1]); if(!isNaN(v)){ kp=v; break; } }
+    if(kp!=null){ _kp=kp;
+      auroraUniforms.uInt.value = Math.max(0.6, Math.min(2.6, 0.5+kp*0.3));   // brighter curtains when active
+      if(passPanel.classList.contains('show')) renderTonight();
+    } else _kp='err';
+  }catch(e){ _kp='err'; }
+  finally{ _kpFetching=false; }
 }
 // ---------- Conjunctions & alignments finder (same scan idea as the eclipse finder). ----------
 const _CJ_PLANETS=['Mercury','Venus','Mars','Jupiter','Saturn'];
