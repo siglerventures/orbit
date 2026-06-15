@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.53">
+<meta name="app-rev" content="3.54">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -272,7 +272,7 @@ document.addEventListener('DOMContentLoaded', function(){
     transition:opacity .2s, transform .2s; }
   #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
   #passes { position:fixed; z-index:60; top:64px; left:50%; transform:translateX(-50%);
-    width:312px; max-width:92vw; display:none; flex-direction:column; gap:5px; padding:10px; }
+    width:312px; max-width:92vw; max-height:82vh; overflow-y:auto; display:none; flex-direction:column; gap:5px; padding:10px; }
   #passes.show { display:flex; }
   #passes .exhead { font-size:10px; text-transform:uppercase; letter-spacing:1.3px; color:var(--muted); margin-bottom:3px; }
   #passes .pstat { font-size:11.5px; color:var(--fg); margin-bottom:4px; line-height:1.45; }
@@ -477,6 +477,7 @@ document.addEventListener('DOMContentLoaded', function(){
     <button class="prow" id="aimBtn" style="justify-content:center; margin-top:6px; display:none">🧭 Point phone at the sky</button>
     <div id="aimOut"></div>
     <div id="comingUp"></div>
+    <div id="reentry"></div>
     <div id="onThisDay"></div>
   </div>
 
@@ -2525,6 +2526,7 @@ let cloud=null;                 // THREE.Points for the whole bulk constellation
 let cloudBaseSize=null;         // base per-point sizes, so a focused group can be enlarged
 let isoShort=null;              // when set, only this constellation is shown (others hidden)
 const cloudMeta=[];             // per-point { name, id, tag, short } for picking
+let cloudTLEs=null;             // raw TLEs aligned with cloudMeta/cloud index (for the reentry scan)
 let cloudWorker=null;
 let cloudPrev=null, cloudCur=null, cloudRecvWall=0;   // double-buffer for interpolation
 const CLOUD_TICK_MS=120;
@@ -2719,7 +2721,7 @@ async function loadSatellites(){
       cloudMeta.push({ name:rec.name||g.short, id:rec.id, tag:g.tag, short:g.short });
     }
   });
-  if(tles.length){ buildCloud(tles); startCloudDriver(tles); liveReady=true; }
+  if(tles.length){ cloudTLEs=tles; buildCloud(tles); startCloudDriver(tles); liveReady=true; }
 
   const total=(groups.iss?1:0)+tles.length;
   if(total===0){
@@ -3336,6 +3338,41 @@ function renderOnThisDay(){
   host.innerHTML=html;
   host.querySelectorAll('.cjrow').forEach((r,i)=>r.addEventListener('click', ()=>jumpToHistEvent(list[i].e)));
 }
+// ---------- Reentry watch: flag objects with a low perigee — the ones about to fall. ----------
+function perigeeMi(sr){
+  const mu=398600.4418, n=sr.no_kozai/60;                    // no_kozai is rad/min -> rad/s
+  if(!n) return Infinity;
+  const a=Math.cbrt(mu/(n*n));                               // semi-major axis (km)
+  return (a*(1-sr.ecco)-6378.137)*0.621371;                  // perigee altitude -> miles
+}
+let _reentryCache=null;
+function reentryScan(){
+  if(_reentryCache) return _reentryCache;
+  const out=[];
+  if(cloudTLEs){
+    for(let i=0;i<cloudTLEs.length;i++){
+      let sr; try{ sr=satellite.twoline2satrec(cloudTLEs[i].l1, cloudTLEs[i].l2); }catch(_){ continue; }
+      const peri=perigeeMi(sr);
+      if(isFinite(peri) && peri>0 && peri<150) out.push({ i, peri });   // perigee under ~150 mi (~240 km) = decaying
+    }
+    out.sort((a,b)=>a.peri-b.peri);
+  }
+  _reentryCache=out.slice(0,10);
+  return _reentryCache;
+}
+function renderReentry(){
+  const host=document.getElementById('reentry'); if(!host) return;
+  if(!cloudTLEs){ host.innerHTML=''; return; }               // cloud not loaded yet
+  const list=reentryScan();
+  let html='<div class="exhead" style="margin-top:9px">Reentry watch — lowest perigees, about to fall</div>';
+  if(!list.length){ host.innerHTML=html+'<div class="trow"><span class="pdim">Nothing with a critically low perigee right now.</span></div>'; return; }
+  html+=list.map((r,k)=>{ const m=cloudMeta[r.i]||{}; const imminent=r.peri<95;
+    return `<button class="prow cjrow" data-k="${k}"><span>${imminent?'🔥 ':'🛰️ '}${m.name||('NORAD '+(m.id||'?'))}</span>`
+      +`<span class="pdim">perigee ${Math.round(r.peri)} mi</span></button>`; }).join('');
+  host.innerHTML=html;
+  host.querySelectorAll('.cjrow').forEach((r,k)=>r.addEventListener('click', ()=>{
+    passPanel.classList.remove('show'); selectCloud(list[k].i, true); }));
+}
 function renderPasses(){
   renderTonight();                                           // moon · planets · meteors, then the ISS passes below
   aimBtn.style.display = aimSupported() ? 'flex' : 'none';   // sky-pointing is touch-device only
@@ -3468,6 +3505,7 @@ passBtn.addEventListener('click', ()=>{
   if(passPanel.classList.contains('show')){ passPanel.classList.remove('show'); return; }
   explorePanel.classList.remove('show'); passPanel.classList.add('show');
   renderConjunctions();                                      // upcoming sky pairings (geocentric — no location needed)
+  renderReentry();                                           // satellites with a low perigee, about to fall
   renderOnThisDay();                                         // famous space anniversaries to jump to
   if(!(groups.iss && groups.iss.satrecs[0])){ passStat.textContent='ISS data isn’t loaded yet — try again in a moment.'; passList.innerHTML=''; return; }
   if(observerGd){ safeRenderPasses(); return; }
