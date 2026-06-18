@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.57">
+<meta name="app-rev" content="3.58">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -3558,9 +3558,25 @@ function placeLocationPin(lat, lon){
     locPin=new THREE.Mesh(new THREE.SphereGeometry(0.016,12,12), new THREE.MeshBasicMaterial({ color:0x4ea3ff }));
     earthGroup.add(locPin);
     const el=document.createElement('div'); el.className='sat-label'; el.textContent='📍 You';
+    el.style.pointerEvents='auto'; el.style.cursor='pointer'; el.title='Show the stars overhead from your location';
+    el.addEventListener('click', e=>{ e.stopPropagation(); showMySky(); });
     locPinLabel=new CSS2DObject(el); locPinLabel.position.set(0,0.05,0); locPin.add(locPinLabel);
   }
   locPin.position.set(cp*Math.cos(lam), Math.sin(phi), -cp*Math.sin(lam)).multiplyScalar(1.004);
+}
+// Click the "You" pin -> face your local zenith with the stars + constellations on:
+// the patch of sky directly overhead at your location, right now.
+const _zen=new THREE.Vector3();
+function showMySky(){
+  if(!locPin) return;
+  if(typeof exitDiorama==='function' && dioActive) exitDiorama();
+  locPin.getWorldPosition(_zen); _zen.normalize();                 // zenith dir (rides Earth's spin)
+  if(!starsGroup.visible){ starsGroup.visible=true; document.getElementById('sky-stars').classList.add('active'); if(typeof updateStars==='function') updateStars(); }
+  if(!constGroup.visible){ constGroup.visible=true; document.getElementById('sky-const').classList.add('active'); }
+  lookAtSky(_zen);                                                 // face straight up from your spot
+  if(typeof passPanel!=='undefined'&&passPanel) passPanel.classList.remove('show');
+  showInfo({ tag:'Your sky', name:'Straight up from you',
+    text:'Your local zenith right now — the stars and constellations directly overhead at your location. Drag to pan across your sky.' });
 }
 function useLatLon(la, lo){ observerGd={ longitude:lo*Math.PI/180, latitude:la*Math.PI/180, height:0.1 }; placeLocationPin(la, lo); }
 async function fallbackLocate(why){
