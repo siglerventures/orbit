@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.59">
+<meta name="app-rev" content="3.60">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -2079,45 +2079,47 @@ const realEl=document.getElementById('realphoto'), realImg=document.getElementBy
 const _realCache={};
 function mapsLink(item){ return (item && item.lat!=null) ? `https://www.google.com/maps/@${item.lat},${item.lon},10z/data=!3m1!1e3` : null; }
 function closeRealPhoto(){ realEl.classList.remove('show'); realEl.setAttribute('aria-hidden','true'); }
+async function wikiSummary(wiki){
+  if(_realCache[wiki]) return _realCache[wiki];
+  const r=await fetch('https://en.wikipedia.org/api/rest_v1/page/summary/'+encodeURIComponent(wiki), {headers:{accept:'application/json'}});
+  if(!r.ok) throw new Error('http '+r.status);
+  const d=await r.json(); _realCache[wiki]=d; return d;
+}
+async function wikiImageSrc(wiki, key){
+  if(PW_IMG[key]) return PW_IMG[key];
+  let d=null; try{ d=await wikiSummary(wiki); }catch(_){ }
+  const thumb=d&&d.thumbnail&&d.thumbnail.source, orig=d&&d.originalimage&&d.originalimage.source;
+  let src = thumb ? thumb.replace(/\/\d+px-/, '/1024px-') : orig;
+  if(!src){                                                          // summary had no image -> pageimages API
+    try{
+      const r2=await fetch('https://en.wikipedia.org/w/api.php?action=query&prop=pageimages&piprop=original|thumbnail&pithumbsize=1024&redirects=1&format=json&origin=*&titles='+encodeURIComponent(wiki));
+      const j2=await r2.json(); const pages=j2&&j2.query&&j2.query.pages;
+      if(pages){ const pg=Object.values(pages)[0]||{}; src=(pg.original&&pg.original.source)||(pg.thumbnail&&pg.thumbnail.source); }
+    }catch(_){ }
+  }
+  return src||null;
+}
 async function openRealPhoto(item){
   if(!item) return;
   const wiki = item.wiki || PW_WIKI[item.key]; if(!wiki) return;
   realName.textContent = item.name || '';
-  realCap.textContent=''; realCredit.textContent='';
+  realCap.textContent=''; realCredit.textContent='Photo via your image / Wikipedia · summary via Wikipedia.';
   realImg.style.display='none'; realImg.removeAttribute('src');
   realLoad.style.display=''; realLoad.textContent='Loading real photo…';
-  // Links out (the user picked "Both"): Wikipedia article + live satellite imagery at the spot.
-  const wikiUrl='https://en.wikipedia.org/wiki/'+encodeURIComponent(wiki);
-  const ml=mapsLink(item);
+  const wikiUrl='https://en.wikipedia.org/wiki/'+encodeURIComponent(wiki), ml=mapsLink(item);
   realLinks.innerHTML = `<a href="${wikiUrl}" target="_blank" rel="noopener">Wikipedia ↗</a>`
     + (ml ? ` <a href="${ml}" target="_blank" rel="noopener">Open in Maps (satellite) ↗</a>` : '');
   realEl.classList.add('show'); realEl.setAttribute('aria-hidden','false');
-  try{
-    let data=_realCache[wiki];
-    if(!data){
-      const r=await fetch('https://en.wikipedia.org/api/rest_v1/page/summary/'+encodeURIComponent(wiki), {headers:{accept:'application/json'}});
-      if(!r.ok) throw new Error('http '+r.status);
-      data=await r.json(); _realCache[wiki]=data;
-    }
-    const thumb=data.thumbnail&&data.thumbnail.source, orig=data.originalimage&&data.originalimage.source;
-    let src = PW_IMG[item.key] || (thumb ? thumb.replace(/\/\d+px-/, '/1024px-') : orig);   // override, else summary image
-    if(!src){                                                          // summary had no image -> try the pageimages API
-      try{
-        const r2=await fetch('https://en.wikipedia.org/w/api.php?action=query&prop=pageimages&piprop=original|thumbnail&pithumbsize=1024&redirects=1&format=json&origin=*&titles='+encodeURIComponent(wiki));
-        const j2=await r2.json(); const pages=j2&&j2.query&&j2.query.pages;
-        if(pages){ const pg=Object.values(pages)[0]||{}; src=(pg.original&&pg.original.source)||(pg.thumbnail&&pg.thumbnail.source); }
-      }catch(_){ }
-    }
-    if(src){
-      realImg.onload=()=>{ realLoad.style.display='none'; realImg.style.display=''; };
-      realImg.onerror=()=>{ realLoad.textContent='(photo unavailable — use the links below)'; };
-      realImg.src=src;
-      realCredit.textContent='Photo & summary via Wikipedia / Wikimedia Commons.';
-    } else { realLoad.textContent='No photo found — use the links below.'; }
-    if(data.extract) realCap.textContent = data.extract.length>260 ? data.extract.slice(0,257)+'…' : data.extract;
-  }catch(e){
-    realLoad.textContent='Couldn’t load a photo right now — use the links below.';
-  }
+  const show=()=>{ realLoad.style.display='none'; realImg.style.display=''; };
+  const fail=()=>{ realImg.style.display='none'; realLoad.style.display=''; realLoad.textContent='(photo unavailable — use the links below)'; };
+  // Prefer your own image (assets/planetwatch/<key>.jpg); fall back to a Wikipedia photo.
+  realImg.onload=show;
+  realImg.onerror=async ()=>{
+    let src=null; try{ src=await wikiImageSrc(wiki, item.key); }catch(_){ }
+    if(src){ realImg.onerror=fail; realImg.onload=show; realImg.src=src; } else fail();
+  };
+  realImg.src='assets/planetwatch/'+item.key+'.jpg';
+  try{ const d=await wikiSummary(wiki); if(d&&d.extract) realCap.textContent = d.extract.length>260 ? d.extract.slice(0,257)+'…' : d.extract; }catch(_){ }
 }
 dioRealBtn.addEventListener('click', ()=>openRealPhoto(dioObj));
 document.getElementById('realClose').addEventListener('click', closeRealPhoto);
@@ -2851,6 +2853,8 @@ let _downX=0, _downY=0;
 canvas.addEventListener('pointerdown', e=>{ _downX=e.clientX; _downY=e.clientY; });
 canvas.addEventListener('click', e=>{
   if(Math.hypot(e.clientX-_downX, e.clientY-_downY) > 6) return;   // moved -> it was a drag, keep selection
+  const pin=nearestPin(e.clientX, e.clientY, 22);                 // a Planetwatch pin near the click wins over a satellite behind it
+  if(pin){ visitPlace(pin); return; }
   ndc.x=(e.clientX/innerWidth)*2-1; ndc.y=-(e.clientY/innerHeight)*2+1;
   ray.setFromCamera(ndc,camera);
   const meshHit=ray.intersectObjects(pickables,false)[0];
@@ -2880,18 +2884,23 @@ canvas.addEventListener('click', e=>{
 // Double-click a Planetwatch pin on the globe (its dot, or anywhere near it) -> dive
 // straight into that landmark's close-up, same as double-clicking its label.
 const _pwHit=new THREE.Vector3();
-canvas.addEventListener('dblclick', e=>{
-  if(!planetGroup.visible) return;                        // only when the pins are shown
-  let best=null, bestD=28;                                // nearest pin within 28px of the cursor
+// Nearest visible Planetwatch pin within `radius` px of (cx,cy), or null.
+function nearestPin(cx, cy, radius){
+  if(!planetGroup.visible) return null;
+  let best=null, bestD=radius;
   for(const item of PLANETWATCH){
-    if(!item._anchor || !item.build || occludedByEarth(item._anchor)) continue;   // need a close-up + must be on the near side
+    if(!item._anchor || !item.build || occludedByEarth(item._anchor)) continue;   // need a close-up + near side
     item._anchor.getWorldPosition(_pwHit); _pwHit.project(camera);
     if(_pwHit.z>1) continue;
     const sx=(_pwHit.x*0.5+0.5)*innerWidth, sy=(-_pwHit.y*0.5+0.5)*innerHeight;
-    const d=Math.hypot(sx-e.clientX, sy-e.clientY);
+    const d=Math.hypot(sx-cx, sy-cy);
     if(d<bestD){ bestD=d; best=item; }
   }
-  if(best){ e.preventDefault(); enterDiorama('planet', best); }
+  return best;
+}
+canvas.addEventListener('dblclick', e=>{
+  const p=nearestPin(e.clientX, e.clientY, 46);          // forgiving: dive into the close-up
+  if(p){ e.preventDefault(); enterDiorama('planet', p); }
 });
 
 // Hover affordance: turn the cursor into a pointer over any clickable target
