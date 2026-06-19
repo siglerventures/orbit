@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.58">
+<meta name="app-rev" content="3.59">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -2013,7 +2013,7 @@ function buildScene(kind,o){
   if(kind==='aurora')   return buildAuroraScene();
   if(kind==='solar')    return buildSolarSystemScene();
   if(kind==='sat')      return buildSatScene(o);
-  if(kind==='planet')   return o.build({ item:o });
+  if(kind==='planet')   return dioImageOr(o.key, ()=> o.build({ item:o }));
   return buildStarScene(o);
 }
 let dioKind='star', dioList=STARS;
@@ -3665,6 +3665,26 @@ function dioGroundScene(decls, body, uniforms, opts){
   dioScene.background=new THREE.Color(opts.bg!=null?opts.bg:0x01030a);
   dioGround(decls, body, uniforms);
   return Object.assign({ radius:300, height:560, target:_V(0,0,0), rate:0.03 }, opts.cam||{});
+}
+// Planetwatch close-ups: if assets/planetwatch/<key>.jpg exists, show that photo as the
+// backdrop (hiding the procedural scene); otherwise keep the procedural 3D scene. Drop a
+// file in and it's used automatically — no code change needed.
+function dioImageOr(key, buildProcedural){
+  const cfg = buildProcedural();                      // build the 3D scene first (instant, always works)
+  const baseObjs = dioScene.children.slice();         // the procedural meshes/lights, to hide if a photo loads
+  new THREE.TextureLoader().load('assets/planetwatch/'+key+'.jpg',
+    tex=>{
+      if(!dioActive || baseObjs[0] && dioScene.children.indexOf(baseObjs[0])<0) return;   // diorama changed -> ignore
+      if(THREE.SRGBColorSpace) tex.colorSpace=THREE.SRGBColorSpace;
+      tex.minFilter=THREE.LinearFilter;
+      dioScene.fog=null; dioScene.background=tex;      // photo fills the frame
+      for(const o of baseObjs) o.visible=false;        // hide the procedural terrain/shader
+      let kb=0; dioUpdaters.push(()=>{ kb+=0.00018; const s=0.94+0.04*Math.sin(kb); tex.repeat.set(s,s); tex.offset.set((1-s)/2,(1-s)/2); });   // gentle Ken Burns
+    },
+    undefined,
+    ()=>{ /* no photo for this key -> keep the procedural scene */ }
+  );
+  return cfg;
 }
 // --- Real 3D displaced terrain for landscape close-ups: actual geometry lit by a
 //     sun, so relief has depth (like the star scenes) instead of a flat painting. ---
