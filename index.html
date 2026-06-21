@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.60">
+<meta name="app-rev" content="3.61">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -341,11 +341,10 @@ document.addEventListener('DOMContentLoaded', function(){
     #title { top:58px; left:8px; max-width:60vw; padding:9px 11px; }
     #title h1 { font-size:14px; }
     #title p { font-size:11px; }
-    /* Centered top toolbar (home · 📍 · ✨ · search) — just nudge it up + tighten. */
-    #topbar { top:8px; gap:7px; }
-    #search input { width:42vw; }
-    #explore { top:56px; bottom:auto; }
-    #passes { top:56px; bottom:auto; }
+    /* Centered top toolbar (home · 📍 · 🚀 · 🔗 · ✨ · search) — nudge up, tighten, wrap if needed. */
+    #topbar { top:8px; gap:6px; max-width:100vw; }
+    #search input { width:40vw; }
+    #explore, #passes, #launches { top:54px; bottom:auto; max-width:94vw; }
     /* Nav drops below the toolbar so they don't collide */
     #nav { gap:5px; right:8px; top:58px; max-height:calc(100vh - 72px); }
     #nav button { min-width:96px; padding:6px 10px; font-size:12px; }
