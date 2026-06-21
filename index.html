@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.61">
+<meta name="app-rev" content="3.62">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -3100,6 +3100,9 @@ const TOUR=[
   { do:()=>{ focusPlanet(planetByName('Jupiter')); }, cap:'🪐 Jupiter — the giant of the solar system, with its four largest moons in tow.', dwell:5500 },
   { do:()=>{ focusSun(); }, cap:'☀️ The Sun — 93 million miles away. Its light took about 8 minutes to reach us.', dwell:5000 },
   { do:()=>{ const o=CONSTELLATIONS.find(c=>c.name==='Orion'); if(o) selectConstellation(o); }, cap:'✦ Orion — one of dozens of constellations on the real star sphere around you.', dwell:5000 },
+  { do:()=>{ exitFocus(); deselect(); planetGroup.visible=true; const b=document.getElementById('place-pins'); if(b) b.classList.add('active'); setTarget(1.55); }, cap:'🌍 Planetwatch — those 📍 pins are real places. Double-click one to dive into a close-up of it from orbit.', dwell:5200 },
+  { do:()=>{ if(!auroraGroup.visible){ auroraGroup.visible=true; const b=document.getElementById('sky-aurora'); if(b) b.classList.add('active'); } setTarget(2.6); }, cap:'🟢 Aurora — live space-weather drives the glow; the 📍 panel says if it’s visible from your latitude tonight.', dwell:5000 },
+  { do:()=>{ exitFocus(); deselect(); setTarget(2.5); }, cap:'📍 Tonight-over-you · 🚀 launches · 🔗 share-a-view · 🪐 Scale ▸ Solar System — it’s all in the toolbar.', dwell:5400 },
   { do:()=>{ const h=document.getElementById('homeBtn'); if(h) h.click(); }, cap:'That’s the tour — now explore on your own. 🚀', dwell:4200 },
 ];
 let tourActive=false, tourTimer=null, tourIdx=0;
