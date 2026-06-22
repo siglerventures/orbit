@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.65">
+<meta name="app-rev" content="3.66">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -361,7 +361,8 @@ document.addEventListener('DOMContentLoaded', function(){
       border:1px solid rgba(78,163,255,0.45); backdrop-filter:blur(6px); box-shadow:0 4px 14px rgba(0,0,0,0.4);
       color:var(--accent); font-size:18px; cursor:pointer; -webkit-tap-highlight-color:transparent; }
     body.ui-hidden #topbar, body.ui-hidden #exploreBtn, body.ui-hidden #hud,
-    body.ui-hidden #nav, body.ui-hidden #hudShow, body.ui-hidden #title { display:none !important; }
+    body.ui-hidden #nav, body.ui-hidden #hudShow, body.ui-hidden #title,
+    body.ui-hidden #passes, body.ui-hidden #launches { display:none !important; }
     /* Miles box: its own hide button + a reopen chip (bottom-left). */
     #hudHide { display:flex; }
     body.hud-collapsed #hud { display:none; }
