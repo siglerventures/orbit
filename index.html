@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.62">
+<meta name="app-rev" content="3.63">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -473,7 +473,7 @@ document.addEventListener('DOMContentLoaded', function(){
     <button id="shareBtn" title="Copy a link to this exact view" aria-label="Share this view">🔗</button>
     <button id="exploreBtn" title="Search" aria-label="Search">✨</button>
     <div id="search" class="panel">
-      <input id="searchInput" type="text" placeholder="Search satellite or NORAD id…" autocomplete="off" spellcheck="false" />
+      <input id="searchInput" type="text" placeholder="Search satellites, planets, places, stars…" autocomplete="off" spellcheck="false" />
       <span id="searchMsg"></span>
     </div>
   </div>
@@ -899,6 +899,12 @@ async function doSearch(qRaw){
   // Skywatch objects (constellations, comets, meteor showers) before satellites.
   if(skywatchSearch(ql)){ searchMsg(''); return; }
   if(planetwatchSearch(ql)){ searchMsg(''); return; }
+  // Planets, Moon, Sun, and the whole-solar-system view.
+  if(ql==='solar system'||ql==='solar'||ql==='planets'){ enterDiorama('solar', SOLAR); searchMsg(''); return; }
+  if(ql==='moon'||ql==='the moon'){ focusMoon(); searchMsg(''); return; }
+  if(ql==='sun'||ql==='the sun'){ focusSun(); searchMsg(''); return; }
+  { const pd=PLANET_DEFS.find(d=> d.name.toLowerCase()===ql || (ql.length>=4 && d.name.toLowerCase().startsWith(ql)));
+    if(pd){ const p=planetByName(pd.name); if(p){ focusPlanet(p); searchMsg(''); return; } } }
   let idx=cloudMeta.findIndex(m=>m.name && m.name.toLowerCase()===ql);
   if(idx<0) idx=cloudMeta.findIndex(m=>m.name && m.name.toLowerCase().includes(ql));
   if(idx>=0){ selectCloud(idx,true); searchMsg(''); return; }
