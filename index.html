@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.63">
+<meta name="app-rev" content="3.64">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -1994,6 +1994,19 @@ function buildSolarSystemScene(){
   const glow=_track(new THREE.Sprite(new THREE.SpriteMaterial({ map:STAR_TEX, color:0xffcf72, transparent:true, opacity:0.9, blending:THREE.AdditiveBlending, depthWrite:false }))); glow.scale.set(64,64,1); dioAdd(glow);
   dioAdd(new THREE.PointLight(0xfff4e0, 3.0, 0, 0));   // decay 0 -> lights the far planets evenly
   dioAdd(new THREE.AmbientLight(0xffffff, 0.20));
+  // Billboarded text labels (CSS2D labels are hidden inside dioramas, so draw them as sprites).
+  const solarLabel=(text)=>{
+    const fs=64, pad=18, c=document.createElement('canvas'), ctx=c.getContext('2d');
+    ctx.font=`600 ${fs}px system-ui, -apple-system, sans-serif`;
+    c.width=Math.ceil(ctx.measureText(text).width)+pad*2; c.height=fs+pad*2;
+    ctx.font=`600 ${fs}px system-ui, -apple-system, sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.shadowColor='rgba(0,0,0,0.95)'; ctx.shadowBlur=10; ctx.fillStyle='#eaf2ff';
+    ctx.fillText(text, c.width/2, c.height/2);
+    const tex=new THREE.CanvasTexture(c); tex.minFilter=THREE.LinearFilter;
+    const sp=_track(new THREE.Sprite(new THREE.SpriteMaterial({ map:tex, transparent:true, depthTest:false, depthWrite:false })));
+    const s=0.085; sp.scale.set(c.width*s, c.height*s, 1); return sp;
+  };
+  const sunLbl=solarLabel('Sun'); sunLbl.position.set(0, 11, 0); dioAdd(sunLbl);
   const T=(Date.now()/86400000 + 2440587.5 - 2451545.0)/36525;
   const PLS=[['Mercury',1.0,0xb9a89a],['Venus',1.7,0xe6cd8a],['Earth',1.8,0x6ea8ff],['Mars',1.3,0xe2683b],
              ['Jupiter',3.8,0xd9a066],['Saturn',3.2,0xe7d4a0],['Uranus',2.5,0x9fd6e6],['Neptune',2.4,0x6f8cff]];
@@ -2003,6 +2016,7 @@ function buildSolarSystemScene(){
     const m=_track(new THREE.Mesh(new THREE.SphereGeometry(rad,24,24),
       new THREE.MeshStandardMaterial({ color:col, roughness:0.85, metalness:0.0, emissive:col, emissiveIntensity:0.12 })));
     m.position.copy(dir).multiplyScalar(rScene); dioAdd(m);
+    const lbl=solarLabel(name); lbl.position.copy(m.position).add(new THREE.Vector3(0, rad+4.5, 0)); dioAdd(lbl);
     const pts=[]; for(let k=0;k<=160;k++){ const a=k/160*Math.PI*2; pts.push(new THREE.Vector3(Math.cos(a)*rScene,0,Math.sin(a)*rScene)); }
     dioAdd(_track(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
       new THREE.LineBasicMaterial({ color:0x33405e, transparent:true, opacity:0.55 }))));
