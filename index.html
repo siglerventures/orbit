@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.64">
+<meta name="app-rev" content="3.65">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -65,6 +65,12 @@ document.addEventListener('DOMContentLoaded', function(){
   #status.warn { color:var(--amber); } #status.warn .dot { background:var(--amber); box-shadow:0 0 6px var(--amber); }
 
   #hud { bottom:16px; left:16px; min-width:220px; }
+  /* Hide-the-readout button (shown on phones) + master hide / reopen chip (mobile-only, see @media). */
+  #hudHide { position:absolute; top:6px; right:8px; width:22px; height:22px; border-radius:50%; padding:0; line-height:1;
+    display:none; align-items:center; justify-content:center; background:rgba(20,30,48,0.6);
+    border:1px solid rgba(120,160,210,0.25); color:var(--muted); font-size:11px; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+  #hudHide:hover { color:var(--fg); border-color:var(--accent); }
+  #uiHideBtn, #hudShow { display:none; }
   #hud .row { display:flex; justify-content:space-between; gap:18px; font-size:12px; margin:3px 0; }
   #hud .row span:first-child { color:var(--muted); }
   #hud .alt { font-size:22px; font-weight:600; margin:2px 0 8px; letter-spacing:0.4px; }
@@ -341,10 +347,35 @@ document.addEventListener('DOMContentLoaded', function(){
     #title { top:58px; left:8px; max-width:60vw; padding:9px 11px; }
     #title h1 { font-size:14px; }
     #title p { font-size:11px; }
-    /* Centered top toolbar (home · 📍 · 🚀 · 🔗 · ✨ · search) — nudge up, tighten, wrap if needed. */
+    /* Centered top toolbar (home · 📍 · 🚀 · 🔗 · search) — ✨ lifts out to the top-right corner. */
     #topbar { top:8px; gap:6px; max-width:100vw; }
     #search input { width:40vw; }
     #explore, #passes, #launches { top:54px; bottom:auto; max-width:94vw; }
+    #explore { max-height:calc(100vh - 70px); overflow-y:auto; }
+    /* ✨ to the top-right, just above the Satellites menu (which sits at top:58px). */
+    #exploreBtn { position:fixed; top:8px; right:8px; z-index:71; }
+    /* Master hide (top-left) — clears everything but the globe. */
+    #uiHideBtn { display:flex; position:fixed; z-index:72; top:8px; left:8px;
+      width:40px; height:40px; border-radius:50%; align-items:center; justify-content:center;
+      background:radial-gradient(circle at 32% 28%, rgba(78,163,255,0.30), rgba(20,30,48,0.72));
+      border:1px solid rgba(78,163,255,0.45); backdrop-filter:blur(6px); box-shadow:0 4px 14px rgba(0,0,0,0.4);
+      color:var(--accent); font-size:18px; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+    body.ui-hidden #topbar, body.ui-hidden #exploreBtn, body.ui-hidden #hud,
+    body.ui-hidden #nav, body.ui-hidden #hudShow, body.ui-hidden #title { display:none !important; }
+    /* Miles box: its own hide button + a reopen chip (bottom-left). */
+    #hudHide { display:flex; }
+    body.hud-collapsed #hud { display:none; }
+    #hudShow { position:fixed; z-index:60; bottom:16px; left:16px; width:40px; height:40px; border-radius:50%;
+      align-items:center; justify-content:center; box-shadow:0 4px 14px rgba(0,0,0,0.4);
+      background:radial-gradient(circle at 32% 28%, rgba(78,163,255,0.30), rgba(20,30,48,0.72));
+      border:1px solid rgba(78,163,255,0.45); backdrop-filter:blur(6px);
+      color:var(--accent); font-size:17px; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+    body.hud-collapsed #hudShow { display:flex; }
+    body.ui-hidden #hudShow { display:none !important; }
+    /* Footer (version · Data · People · Sign out) relocated into the ✨ panel, under Next eclipse. */
+    #explore #orbit-footer { position:static; left:auto; bottom:auto; transform:none; z-index:auto;
+      display:flex; flex-wrap:wrap; justify-content:center; align-items:center; gap:4px 6px;
+      margin-top:8px; padding:8px 4px 2px; border-top:1px solid rgba(120,160,210,0.18); width:100%; box-sizing:border-box; }
     /* Nav drops below the toolbar so they don't collide */
     #nav { gap:5px; right:8px; top:58px; max-height:calc(100vh - 72px); }
     #nav button { min-width:96px; padding:6px 10px; font-size:12px; }
@@ -551,6 +582,7 @@ document.addEventListener('DOMContentLoaded', function(){
   </div>
 
   <div id="hud" class="panel">
+    <button id="hudHide" title="Hide the readout" aria-label="Hide the readout">✕</button>
     <div class="alt" id="altVal">0 mi</div>
     <div class="row"><span>Region</span><span class="region" id="regionVal">Surface</span></div>
     <div class="row"><span>Tracking</span><span id="countVal">—</span></div>
@@ -569,6 +601,10 @@ document.addEventListener('DOMContentLoaded', function(){
     </div>
     <input type="datetime-local" id="dateInput" />
   </div>
+
+  <!-- Mobile-only declutter controls -->
+  <button id="uiHideBtn" title="Hide the interface" aria-label="Hide the interface">🙈</button>
+  <button id="hudShow" title="Show the readout" aria-label="Show the readout">📊</button>
 
   <div id="info" class="panel">
     <button id="infoClose" title="Deselect" aria-label="Deselect">×</button>
@@ -3222,6 +3258,29 @@ document.getElementById('exploreBtn').addEventListener('click', ()=>{
     explorePanel.classList.add('show'); searchInput.focus();
   } else { explorePanel.classList.remove('show'); searchInput.blur(); }
 });
+// Mobile declutter: master hide-all toggle, the miles-box's own hide/show, and
+// relocating the footer (version · Data · People · Sign out) into the ✨ panel on phones.
+(function(){
+  const uiHideBtn=document.getElementById('uiHideBtn');
+  uiHideBtn && uiHideBtn.addEventListener('click', ()=>{
+    const hidden=document.body.classList.toggle('ui-hidden');
+    uiHideBtn.textContent=hidden?'👁':'🙈';
+    uiHideBtn.title=hidden?'Show the interface':'Hide the interface';
+  });
+  const hudHide=document.getElementById('hudHide'), hudShow=document.getElementById('hudShow');
+  hudHide && hudHide.addEventListener('click', ()=> document.body.classList.add('hud-collapsed'));
+  hudShow && hudShow.addEventListener('click', ()=> document.body.classList.remove('hud-collapsed'));
+  const mq=window.matchMedia ? window.matchMedia('(max-width:640px)') : null;
+  function placeFooter(){
+    if(!mq) return;
+    const footer=document.getElementById('orbit-footer'), explore=document.getElementById('explore');
+    if(!footer||!explore) return;
+    if(mq.matches){ if(footer.parentElement!==explore) explore.appendChild(footer); }
+    else if(footer.parentElement!==document.body) document.body.appendChild(footer);
+  }
+  placeFooter();
+  if(mq){ if(mq.addEventListener) mq.addEventListener('change', placeFooter); else if(mq.addListener) mq.addListener(placeFooter); }
+})();
 function setSpeed(mult){   // jump to a speed and reflect it on the buttons
   simEpoch=simNow(); wallEpoch=performance.now(); speed=mult;
   document.querySelectorAll('#speed button').forEach(x=>x.classList.toggle('active', parseFloat(x.dataset.mult)===mult));
