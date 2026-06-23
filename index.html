@@ -6,7 +6,7 @@
 <!-- Versioning — SINGLE SOURCE OF TRUTH. The footer (v{REV}) and login screen
      (Version {REV}) are filled from this meta tag at runtime. Bump this on
      EVERY client change; never hard-code the version anywhere else. -->
-<meta name="app-rev" content="3.66">
+<meta name="app-rev" content="3.67">
 <title>Earth → Orbit</title>
 <script>
 // ===== Cache-bust bootstrap — rev comes from meta[app-rev] (single source of truth) =====
@@ -347,13 +347,12 @@ document.addEventListener('DOMContentLoaded', function(){
     #title { top:58px; left:8px; max-width:60vw; padding:9px 11px; }
     #title h1 { font-size:14px; }
     #title p { font-size:11px; }
-    /* Centered top toolbar (home · 📍 · 🚀 · 🔗 · search) — ✨ lifts out to the top-right corner. */
+    /* Centered top toolbar (home · 📍 · 🚀 · 🔗 · ✨ · search) — ✨ stays inline
+       with the others; the 🙈 hide button sits in its own top-left corner. */
     #topbar { top:8px; gap:6px; max-width:100vw; }
     #search input { width:40vw; }
     #explore, #passes, #launches { top:54px; bottom:auto; max-width:94vw; }
     #explore { max-height:calc(100vh - 70px); overflow-y:auto; }
-    /* ✨ to the top-right, just above the Satellites menu (which sits at top:58px). */
-    #exploreBtn { position:fixed; top:8px; right:8px; z-index:71; }
     /* Master hide (top-left) — clears everything but the globe. */
     #uiHideBtn { display:flex; position:fixed; z-index:72; top:8px; left:8px;
       width:40px; height:40px; border-radius:50%; align-items:center; justify-content:center;
